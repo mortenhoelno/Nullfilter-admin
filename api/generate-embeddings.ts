@@ -1,21 +1,23 @@
-import { NextRequest, NextResponse } from 'next/server'
+// api/generate-embeddings.ts
+import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { createClient } from '@supabase/supabase-js'
 
-export const config = {
-  runtime: 'edge',
-}
+const openaiEndpoint = 'https://api.openai.com/v1/embeddings'
+const openaiModel = 'text-embedding-ada-002'
 
-export default async function handler(req: NextRequest) {
-  const SUPABASE_URL = process.env.SUPABASE_URL!
-  const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
-  const OPENAI_API_KEY = process.env.OPENAI_API_KEY!
-  const openaiEndpoint = 'https://api.openai.com/v1/embeddings'
-  const openaiModel = 'text-embedding-ada-002'
-
+export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
-    const { createClient } = await import('@supabase/supabase-js')
+    const SUPABASE_URL = process.env.SUPABASE_URL!
+    const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
+    const OPENAI_API_KEY = process.env.OPENAI_API_KEY!
+
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !OPENAI_API_KEY) {
+      return res.status(500).json({ error: 'Missing env vars' })
+    }
+
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
-    // Hent chunks uten embedding
+    // Hent inntil 20 chunks uten embedding. (Juster limit som du vil)
     const { data: chunks, error } = await supabase
       .from('document_chunks')
       .select('id, content')
@@ -23,45 +25,38 @@ export default async function handler(req: NextRequest) {
       .limit(20)
 
     if (error) throw new Error('Feil ved henting av chunks: ' + error.message)
+    if (!chunks || chunks.length === 0) {
+      return res.status(200).json({ status: 'OK', message: 'Ingen nye chunks å embedde' })
+    }
 
     for (const chunk of chunks) {
-      const response = await fetch(openaiEndpoint, {
+      const r = await fetch(openaiEndpoint, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${OPENAI_API_KEY}`,
-          'Content-Type': 'application/json'
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
+          'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          input: chunk.content,
-          model: openaiModel
-        })
+        body: JSON.stringify({ input: chunk.content, model: openaiModel }),
       })
 
-      const json = await response.json()
-
-      if (!json?.data?.[0]?.embedding) {
-        console.error('Feil ved embedding:', json)
+      const j = await r.json()
+      const embedding = j?.data?.[0]?.embedding as number[] | undefined
+      if (!embedding) {
+        console.error('Embedding-feil for chunk', chunk.id, j)
         continue
       }
 
-      const embedding = json.data[0].embedding
-
-      const { error: updateError } = await supabase
+      const { error: upErr } = await supabase
         .from('document_chunks')
         .update({ embedding })
         .eq('id', chunk.id)
 
-      if (updateError) {
-        console.error(`Feil ved oppdatering av chunk ${chunk.id}:`, updateError)
-      } else {
-        console.log(`✅ Oppdatert chunk ${chunk.id}`)
-      }
+      if (upErr) console.error('Oppdateringsfeil for chunk', chunk.id, upErr)
     }
 
-    return NextResponse.json({ status: 'OK', message: 'Embeddings generert ✅' })
-
-  } catch (err: any) {
-    console.error('Feil:', err.message)
-    return NextResponse.json({ error: err.message }, { status: 500 })
+    return res.status(200).json({ status: 'OK', message: 'Embeddings generert ✅' })
+  } catch (e: any) {
+    console.error(e)
+    return res.status(500).json({ error: e.message ?? 'Ukjent feil' })
   }
 }
