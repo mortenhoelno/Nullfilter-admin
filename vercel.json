@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/generate-embeddings.ts": {
+      "runtime": "edge"
+    }
+  }
+}
