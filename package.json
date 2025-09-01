@@ -1,5 +1,9 @@
 {
   "name": "nullfilter-admin",
   "version": "1.0.0",
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "@vercel/node": "latest",
+    "@supabase/supabase-js": "latest"
+  }
 }
