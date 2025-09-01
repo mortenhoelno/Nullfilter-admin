@@ -1,3 +1,5 @@
+// Dummy endring for å tvinge ny deploy
+
 // api/generate-embeddings.ts
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
