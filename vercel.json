@@ -1,7 +1,7 @@
 {
   "functions": {
-    "api/generate-embeddings.ts": {
-      "runtime": "edge"
+    "api/*.ts": {
+      "runtime": "nodejs20.x"
     }
   }
 }
