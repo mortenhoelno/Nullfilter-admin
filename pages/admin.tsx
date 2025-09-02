@@ -1,5 +1,5 @@
 import { useState } from "react";
-/* ⬇️ NYTT: legg til disse to importene */
+/* ⬇️ Supabase-koblinger */
 import { upsertDocument } from "../utils/docs";
 import { uploadAndFlag } from "../utils/upload";
 
@@ -40,7 +40,6 @@ export default function AdminPage() {
     };
   });
 
-  /* ⬇️ NYTT: erstatt din gamle handleUpload med denne */
   const handleUpload = async () => {
     try {
       if (!selectedDocId || (!aiFile && !masterFile)) return;
@@ -51,36 +50,23 @@ export default function AdminPage() {
       const theme = doc?.theme === "-" ? null : doc?.theme || null;
 
       // 1) Sørg for at dokumentet finnes i DB (eller oppdateres)
-      await upsertDocument({
-        docNumber: selectedDocId,
-        title,
-        category,
-        theme,
-      });
+      await upsertDocument({ docNumber: selectedDocId, title, category, theme });
 
       // 2) Last opp filer + sett flagg i DB
       if (aiFile) {
-        await uploadAndFlag({
-          file: aiFile,
-          docNumber: selectedDocId,
-          kind: "ai",
-        });
+        await uploadAndFlag({ file: aiFile, docNumber: selectedDocId, kind: "ai" });
       }
       if (masterFile) {
-        await uploadAndFlag({
-          file: masterFile,
-          docNumber: selectedDocId,
-          kind: "master",
-        });
+        await uploadAndFlag({ file: masterFile, docNumber: selectedDocId, kind: "master" });
       }
 
       // 3) Lokal UI-status (checkmarks)
       if (aiFile) setUploadedAi((prev) => Array.from(new Set([...prev, selectedDocId])));
       if (masterFile) setUploadedMaster((prev) => Array.from(new Set([...prev, selectedDocId])));
 
-      alert(
-        `Opplastet dokument #${selectedDocId}\nAI: ${aiFile?.name || "Ingen"}\nMaster: ${masterFile?.name || "Ingen"}`
-      );
+      alert(`Opplastet dokument #${selectedDocId}
+AI: ${aiFile?.name || "Ingen"}
+Master: ${masterFile?.name || "Ingen"}`);
 
       setAiFile(null);
       setMasterFile(null);
@@ -91,15 +77,20 @@ export default function AdminPage() {
   };
 
   return (
-    <div style={{ padding: 40, fontFamily: 'Arial, sans-serif' }}>
+    <div style={{ padding: 40, fontFamily: "Arial, sans-serif" }}>
       <h1 style={{ fontSize: 32 }}>🧠 NULL FILTER Chatbot</h1>
       <h2 style={{ fontSize: 22, marginBottom: 30 }}>Admin-side for opplasting av dokumenter</h2>
 
       <h2 style={{ fontSize: 22 }}>🗂️ Statusoversikt</h2>
-      <table border={1} cellPadding={10} style={{ borderCollapse: 'collapse', width: '100%' }}>
+      <table border={1} cellPadding={10} style={{ borderCollapse: "collapse", width: "100%" }}>
         <thead>
-          <tr style={{ backgroundColor: '#f0f0f0' }}>
-            <th>#</th><th>Tittel</th><th>Kategori</th><th>Tema</th><th>AI</th><th>Master</th>
+          <tr style={{ backgroundColor: "#f0f0f0" }}>
+            <th>#</th>
+            <th>Tittel</th>
+            <th>Kategori</th>
+            <th>Tema</th>
+            <th>AI</th>
+            <th>Master</th>
           </tr>
         </thead>
         <tbody>
@@ -109,43 +100,70 @@ export default function AdminPage() {
               <td>{doc.title}</td>
               <td>{doc.category}</td>
               <td>{doc.theme}</td>
-              <td>{uploadedAi.includes(doc.id) ? '✅' : '🔲'}</td>
-              <td>{uploadedMaster.includes(doc.id) ? '✅' : '🔲'}</td>
+              <td>{uploadedAi.includes(doc.id) ? "✅" : "🔲"}</td>
+              <td>{uploadedMaster.includes(doc.id) ? "✅" : "🔲"}</td>
             </tr>
           ))}
         </tbody>
       </table>
 
-      <hr style={{ margin: '40px 0' }} />
+      <hr style={{ margin: "40px 0" }} />
 
-      {/* ⬇️ NY INFO-BOKS */}
-      <div style={{ marginTop: 24, background: '#fffbe6', padding: 16, borderRadius: 8, lineHeight: 1.5 }}>
-        <h3 style={{ marginTop: 0 }}>📎 Opplastingsregler</h3>
+      {/* INFO-BOKS: vises rett under streken over */}
+      <div
+        style={{
+          marginTop: 24,
+          background: "#fffbe6",
+          border: "1px solid #f5d36c",
+          padding: 16,
+          borderRadius: 8,
+          lineHeight: 1.5,
+        }}
+      >
+        <h3 style={{ marginTop: 0, marginBottom: 8 }}>📎 Opplastingsregler</h3>
         <ul style={{ marginTop: 8 }}>
-          <li><strong>Tillatte tegn:</strong> A–Z a–z 0–9 _ - .</li>
-          <li><strong>Ikke tillatt:</strong> mellomrom og spesialtegn (æøå, é, komma, «–», osv.)</li>
-          <li><strong>Bruk “_”</strong> i stedet for mellomrom.</li>
+          <li>
+            <strong>Tillatte tegn:</strong> A–Z a–z 0–9 _ - .
+          </li>
+          <li>
+            <strong>Ikke tillatt:</strong> mellomrom og spesialtegn (æøå, é, komma, «–», osv.)
+          </li>
+          <li>
+            <strong>Bruk “_”</strong> i stedet for mellomrom.
+          </li>
         </ul>
         <p style={{ margin: 0 }}>
-          <strong>Eksempler (OK):</strong> <code>AI_Hjernen_vaner_endring.txt</code> og <code>MASTER_Hjernen_vaner_endring.pdf</code><br/>
-          <strong>AI må være tekst:</strong> .txt eller .md &nbsp;|&nbsp; <strong>MASTER kan være:</strong> .doc, .docx, .pdf, .txt, .md
+          <strong>Eksempler (OK):</strong> <code>AI_Hjernen_vaner_endring.txt</code> og{" "}
+          <code>MASTER_Hjernen_vaner_endring.pdf</code>
+          <br />
+          <strong>AI må være tekst:</strong> .txt eller .md &nbsp;|&nbsp; <strong>MASTER kan være:</strong> .doc, .docx,
+          .pdf, .txt, .md
         </p>
       </div>
 
-      <p style={{ marginTop: 16 }}>Velg dokumentnummer og last opp AI- og/eller Master-dokument.</p>
+      <p style={{ marginTop: 16 }}>
+        Velg dokumentnummer og last opp AI- og/eller Master-dokument.
+      </p>
+
       <label>
-        <strong>1. Dokumentnummer:</strong><br />
-        <select onChange={(e) => setSelectedDocId(parseInt(e.target.value))} value={selectedDocId ?? ''}>
-          <option value="" disabled>Velg dokument…</option>
+        <strong>1. Dokumentnummer:</strong>
+        <br />
+        <select onChange={(e) => setSelectedDocId(parseInt(e.target.value))} value={selectedDocId ?? ""}>
+          <option value="" disabled>
+            Velg dokument…
+          </option>
           {documents.map((doc) => (
-            <option key={doc.id} value={doc.id}>#{doc.id} – {doc.title}</option>
+            <option key={doc.id} value={doc.id}>
+              #{doc.id} – {doc.title}
+            </option>
           ))}
         </select>
       </label>
 
-      <div style={{ margin: '20px 0' }}>
+      <div style={{ margin: "20px 0" }}>
         <label>
-          <strong>2. AI-dokument:</strong><br />
+          <strong>2. AI-dokument:</strong>
+          <br />
           <input
             type="file"
             accept=".txt,.md"
@@ -156,7 +174,8 @@ export default function AdminPage() {
 
       <div style={{ marginBottom: 20 }}>
         <label>
-          <strong>3. Master-dokument:</strong><br />
+          <strong>3. Master-dokument:</strong>
+          <br />
           <input
             type="file"
             accept=".doc,.docx,.pdf,.txt,.md"
@@ -168,13 +187,20 @@ export default function AdminPage() {
       <button
         onClick={handleUpload}
         disabled={!selectedDocId || (!aiFile && !masterFile)}
-        style={{ background: '#2D88FF', color: 'white', padding: '10px 20px', border: 'none', borderRadius: 6 }}>
+        style={{
+          background: "#2D88FF",
+          color: "white",
+          padding: "10px 20px",
+          border: "none",
+          borderRadius: 6,
+        }}
+      >
         Last opp dokument(er)
       </button>
 
-      <div style={{ marginTop: 40, background: '#fffbe6', padding: 20, borderRadius: 8 }}>
+      <div style={{ marginTop: 40, background: "#fffbe6", padding: 20, borderRadius: 8 }}>
         <h3>💡 Dagens inspirasjonsquote</h3>
-        <blockquote style={{ fontStyle: 'italic' }}>
+        <blockquote style={{ fontStyle: "italic" }}>
           "Små justeringer i dag kan skape store forandringer i morgen."
         </blockquote>
         <p>– Nullfilter GPT</p>
