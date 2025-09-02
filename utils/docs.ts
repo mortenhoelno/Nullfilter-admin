@@ -26,7 +26,7 @@ export async function upsertDocument({
         version,
         source,
       }],
-      { onConflict: 'doc_number' } // krever unik constraint på doc_number
+      { onConflict: 'doc_number' }
     )
     .select()
     .single();
