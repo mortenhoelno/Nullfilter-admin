@@ -1,4 +1,7 @@
 import { useState } from "react";
+/* ⬇️ NYTT: legg til disse to importene */
+import { upsertDocument } from "../utils/docs";
+import { uploadAndFlag } from "../utils/upload";
 
 export default function AdminPage() {
   const [selectedDocId, setSelectedDocId] = useState<number | null>(null);
@@ -37,14 +40,54 @@ export default function AdminPage() {
     };
   });
 
-  const handleUpload = () => {
-    if (!selectedDocId || (!aiFile && !masterFile)) return;
-    if (aiFile) setUploadedAi([...uploadedAi, selectedDocId]);
-    if (masterFile) setUploadedMaster([...uploadedMaster, selectedDocId]);
-    alert(`Opplastet dokument #${selectedDocId}\nAI: ${aiFile?.name || "Ingen"}\nMaster: ${masterFile?.name || "Ingen"}`);
-    setAiFile(null);
-    setMasterFile(null);
-    setSelectedDocId(null);
+  /* ⬇️ NYTT: erstatt din gamle handleUpload med denne */
+  const handleUpload = async () => {
+    try {
+      if (!selectedDocId || (!aiFile && !masterFile)) return;
+
+      const doc = documents.find((d) => d.id === selectedDocId);
+      const title = doc?.title || `(Ledig)`;
+      const category = doc?.category === "-" ? null : doc?.category || null;
+      const theme = doc?.theme === "-" ? null : doc?.theme || null;
+
+      // 1) Sørg for at dokumentet finnes i DB (eller oppdateres)
+      await upsertDocument({
+        docNumber: selectedDocId,
+        title,
+        category,
+        theme,
+      });
+
+      // 2) Last opp filer + sett flagg i DB
+      if (aiFile) {
+        await uploadAndFlag({
+          file: aiFile,
+          docNumber: selectedDocId,
+          kind: "ai",
+        });
+      }
+      if (masterFile) {
+        await uploadAndFlag({
+          file: masterFile,
+          docNumber: selectedDocId,
+          kind: "master",
+        });
+      }
+
+      // 3) Lokal UI-status (checkmarks)
+      if (aiFile) setUploadedAi((prev) => Array.from(new Set([...prev, selectedDocId])));
+      if (masterFile) setUploadedMaster((prev) => Array.from(new Set([...prev, selectedDocId])));
+
+      alert(
+        `Opplastet dokument #${selectedDocId}\nAI: ${aiFile?.name || "Ingen"}\nMaster: ${masterFile?.name || "Ingen"}`
+      );
+
+      setAiFile(null);
+      setMasterFile(null);
+      setSelectedDocId(null);
+    } catch (err: any) {
+      alert("Feil ved opplasting: " + err.message);
+    }
   };
 
   return (
