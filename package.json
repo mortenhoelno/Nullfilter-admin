@@ -10,14 +10,13 @@
   "dependencies": {
     "next": "^15.5.2",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "@supabase/supabase-js": "^2.45.3"
   },
   "devDependencies": {
     "typescript": "^5.3.3",
     "@types/react": "^18.2.15",
     "@types/node": "^20.11.25"
-"@supabase/supabase-js": "^2.45.3"
-
   },
   "engines": {
     "node": ">=20.0.0"
