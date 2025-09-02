@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { storageBucket, pathFor } from './storagePaths';
+import { storageBucket } from './storagePaths';
 import { sanitizeFileName } from './sanitize';
 
 export async function uploadAndFlag({
@@ -14,26 +14,26 @@ export async function uploadAndFlag({
   if (!file) throw new Error('Velg en fil først.');
   if (!docNumber) throw new Error('docNumber mangler.');
 
-  // 1) Lag trygg (sanitert) path/filnavn for Storage
+  // 1) Lag trygg (sanitert) filnavn
   const safeName = sanitizeFileName(file.name);
-  const storagePath = pathFor(kind, docNumber, safeName);
 
-  // 2) Last opp til riktig mappe i Storage
+  // NB: Bygg hele pathen manuelt (ikke bruk pathFor som tar original)
+  const storagePath = `${kind}/${docNumber}/${safeName}`;
+
+  // 2) Last opp til Storage
   const { error: upErr } = await supabase.storage
     .from(storageBucket)
     .upload(storagePath, file, {
-      upsert: true, // krever UPDATE-policy på storage.objects
+      upsert: true,
       contentType: file.type || 'application/octet-stream',
-      cacheControl: '3600',
     });
 
   if (upErr) {
-    // Litt ekstra info for feilsøk i nettleserkonsollen
     console.error('Storage upload error:', upErr, { storagePath, originalName: file.name, safeName });
     throw upErr;
   }
 
-  // 3) Oppdater flagg i DB etter vellykket opplasting
+  // 3) Oppdater flagg i DB
   const patch = kind === 'master' ? { has_master: true } : { has_ai: true };
 
   const { data, error: updErr } = await supabase
