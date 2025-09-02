@@ -1,4 +1,5 @@
 export const storageBucket = 'documents';
+
 export const pathFor = (
   kind: 'master' | 'ai',
   docNumber: number,
