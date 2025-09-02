@@ -118,7 +118,21 @@ export default function AdminPage() {
 
       <hr style={{ margin: '40px 0' }} />
 
-      <p>Velg dokumentnummer og last opp AI- og/eller Master-dokument (.txt eller .md)</p>
+      {/* ⬇️ NY INFO-BOKS */}
+      <div style={{ marginTop: 24, background: '#fffbe6', padding: 16, borderRadius: 8, lineHeight: 1.5 }}>
+        <h3 style={{ marginTop: 0 }}>📎 Opplastingsregler</h3>
+        <ul style={{ marginTop: 8 }}>
+          <li><strong>Tillatte tegn:</strong> A–Z a–z 0–9 _ - .</li>
+          <li><strong>Ikke tillatt:</strong> mellomrom og spesialtegn (æøå, é, komma, «–», osv.)</li>
+          <li><strong>Bruk “_”</strong> i stedet for mellomrom.</li>
+        </ul>
+        <p style={{ margin: 0 }}>
+          <strong>Eksempler (OK):</strong> <code>AI_Hjernen_vaner_endring.txt</code> og <code>MASTER_Hjernen_vaner_endring.pdf</code><br/>
+          <strong>AI må være tekst:</strong> .txt eller .md &nbsp;|&nbsp; <strong>MASTER kan være:</strong> .doc, .docx, .pdf, .txt, .md
+        </p>
+      </div>
+
+      <p style={{ marginTop: 16 }}>Velg dokumentnummer og last opp AI- og/eller Master-dokument.</p>
       <label>
         <strong>1. Dokumentnummer:</strong><br />
         <select onChange={(e) => setSelectedDocId(parseInt(e.target.value))} value={selectedDocId ?? ''}>
@@ -132,14 +146,22 @@ export default function AdminPage() {
       <div style={{ margin: '20px 0' }}>
         <label>
           <strong>2. AI-dokument:</strong><br />
-          <input type="file" accept=".txt,.md" onChange={(e) => setAiFile(e.target.files?.[0] || null)} />
+          <input
+            type="file"
+            accept=".txt,.md"
+            onChange={(e) => setAiFile(e.target.files?.[0] || null)}
+          />
         </label>
       </div>
 
       <div style={{ marginBottom: 20 }}>
         <label>
           <strong>3. Master-dokument:</strong><br />
-          <input type="file" accept=".txt,.md,.pdf" onChange={(e) => setMasterFile(e.target.files?.[0] || null)} />
+          <input
+            type="file"
+            accept=".doc,.docx,.pdf,.txt,.md"
+            onChange={(e) => setMasterFile(e.target.files?.[0] || null)}
+          />
         </label>
       </div>
 
