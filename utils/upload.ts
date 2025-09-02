@@ -1,7 +1,7 @@
 import { supabase } from './supabase';
 import { storageBucket, pathFor } from './storagePaths';
 
-export async function handleUpload({
+export async function uploadAndFlag({
   file,
   docNumber,
   kind,
@@ -23,9 +23,8 @@ export async function handleUpload({
     });
   if (upErr) throw upErr;
 
-  // 2) sett riktig flagg i DB
-  const patch =
-    kind === 'master' ? { has_master: true } : { has_ai: true };
+  // 2) oppdater flagg i DB
+  const patch = kind === 'master' ? { has_master: true } : { has_ai: true };
 
   const { data, error: updErr } = await supabase
     .from('documents')
@@ -36,5 +35,5 @@ export async function handleUpload({
 
   if (updErr) throw updErr;
 
-  return { ok: true, document: data, storagePath };
+  return { storagePath, document: data };
 }
