@@ -14,9 +14,8 @@ export default function AdminPage() {
     { id: 4, title: "Veiledning: Kombinert tilnærming", category: "Prosess", theme: "Mental helse og vekt sammen" },
     { id: 5, title: "Målgrupper: Vektnedgang", category: "Profil", theme: "Typiske avatarer for vektnedgang" },
     { id: 6, title: "Målgrupper: Mental helse", category: "Profil", theme: "Typiske avatarer for mental helse" },
-    { id: 7, title: "Ledig", category: "", theme: "" },
-    { id: 8, title: "Ledig", category: "", theme: "" },
-    { id: 9, title: "Ledig", category: "", theme: "" },
+
+    // Temadokumenter 10–19
     { id: 10, title: "Tema: Vektnedgang", category: "Tema", theme: "Vektnedgang" },
     { id: 11, title: "Tema: Trening", category: "Tema", theme: "Trening" },
     { id: 12, title: "Tema: Kosthold", category: "Tema", theme: "Kosthold" },
@@ -27,14 +26,41 @@ export default function AdminPage() {
     { id: 17, title: "Tema: Sorg og livskriser", category: "Tema", theme: "Sorg og traumer" },
     { id: 18, title: "Tema: Faste", category: "Tema", theme: "Faste og metabolske prosesser" },
     { id: 19, title: "Tema: Sykdommer", category: "Tema", theme: "Psykisk og fysisk helse" },
-    ...Array.from({ length: 21 }, (_, i) => {
-      const id = i + 20
-      const defined = {
-        41: { title: "Q&A: Vektnedgang", category: "Q&A", theme: "Vanlige spørsmål og svar" },
-        42: { title: "Q&A: Mental helse", category: "Q&A", theme: "Vanlige spørsmål og svar" }
-      }[id]
-      return { id, ...(defined ?? { title: "Ledig", category: "", theme: "" }) }
-    }),
+
+    // Flere dokumenter og plassholdere
+    { id: 20, title: "Ledig", category: "-", theme: "-" },
+    { id: 21, title: "Ledig", category: "-", theme: "-" },
+    { id: 22, title: "Ledig", category: "-", theme: "-" },
+    { id: 23, title: "Ledig", category: "-", theme: "-" },
+    { id: 24, title: "Ledig", category: "-", theme: "-" },
+    { id: 25, title: "Ledig", category: "-", theme: "-" },
+    { id: 26, title: "Ledig", category: "-", theme: "-" },
+    { id: 27, title: "Ledig", category: "-", theme: "-" },
+    { id: 28, title: "Ledig", category: "-", theme: "-" },
+    { id: 29, title: "Ledig", category: "-", theme: "-" },
+    { id: 30, title: "Ledig", category: "-", theme: "-" },
+    { id: 31, title: "Ledig", category: "-", theme: "-" },
+    { id: 32, title: "Ledig", category: "-", theme: "-" },
+    { id: 33, title: "Ledig", category: "-", theme: "-" },
+    { id: 34, title: "Ledig", category: "-", theme: "-" },
+    { id: 35, title: "Ledig", category: "-", theme: "-" },
+    { id: 36, title: "Ledig", category: "-", theme: "-" },
+    { id: 37, title: "Ledig", category: "-", theme: "-" },
+    { id: 38, title: "Ledig", category: "-", theme: "-" },
+    { id: 39, title: "Ledig", category: "-", theme: "-" },
+    { id: 40, title: "Ledig", category: "-", theme: "-" },
+
+    // Q&A 41–50
+    { id: 41, title: "Q&A: Vektnedgang", category: "Q&A", theme: "Vanlige spørsmål og svar" },
+    { id: 42, title: "Q&A: Mental helse", category: "Q&A", theme: "Vanlige spørsmål og svar" },
+    { id: 43, title: "Ledig", category: "-", theme: "-" },
+    { id: 44, title: "Ledig", category: "-", theme: "-" },
+    { id: 45, title: "Ledig", category: "-", theme: "-" },
+    { id: 46, title: "Ledig", category: "-", theme: "-" },
+    { id: 47, title: "Ledig", category: "-", theme: "-" },
+    { id: 48, title: "Ledig", category: "-", theme: "-" },
+    { id: 49, title: "Ledig", category: "-", theme: "-" },
+    { id: 50, title: "Ledig", category: "-", theme: "-" },
   ]
 
   const handleUpload = () => {
@@ -46,14 +72,15 @@ export default function AdminPage() {
   }
 
   return (
-    <div style={{ padding: 40, fontFamily: 'Arial, sans-serif', backgroundColor: '#f9f9f9' }}>
+    <div style={{ padding: 40, fontFamily: 'Arial, sans-serif' }}>
       <h1 style={{ fontSize: 32, fontWeight: 'bold', marginBottom: 10 }}>🧠 NULL FILTER Chatbot</h1>
       <h2 style={{ fontSize: 22, fontWeight: 'normal', marginBottom: 30 }}>Admin-side for opplasting av dokumenter</h2>
 
       <h2 style={{ fontSize: 22, fontWeight: 'bold' }}>🗂️ Statusoversikt</h2>
+
       <table border={1} cellPadding={10} style={{ borderCollapse: 'collapse', marginTop: 20, width: '100%' }}>
         <thead>
-          <tr style={{ backgroundColor: '#efefef' }}>
+          <tr style={{ backgroundColor: '#f0f0f0' }}>
             <th>#</th>
             <th>Tittel</th>
             <th>Kategori</th>
@@ -68,7 +95,7 @@ export default function AdminPage() {
               <td>{doc.title}</td>
               <td>{doc.category}</td>
               <td>{doc.theme}</td>
-              <td style={{ textAlign: 'center' }}>{uploadedDocs.includes(doc.id) ? '✅' : '🔲'}</td>
+              <td>{uploadedDocs.includes(doc.id) ? '✅' : '🔲'}</td>
             </tr>
           ))}
         </tbody>
@@ -76,9 +103,7 @@ export default function AdminPage() {
 
       <hr style={{ margin: '40px 0' }} />
 
-      <p style={{ marginBottom: 10 }}>
-        Velg dokumentnummer og last opp filen (.txt eller .md). Dette oppdaterer chatbotens kunnskapsbase med din struktur.
-      </p>
+      <p style={{ marginBottom: 10 }}>Velg dokumentnummer og last opp filen (.txt eller .md). Dette oppdaterer chatbotens kunnskapsbase med din struktur.</p>
 
       <div style={{ marginBottom: 20 }}>
         <label>
@@ -119,7 +144,7 @@ export default function AdminPage() {
       <div style={{ marginTop: 40, padding: 20, background: '#fffbe6', borderRadius: 8 }}>
         <h3>💡 Dagens inspirasjonsquote</h3>
         <blockquote style={{ fontStyle: 'italic', marginTop: 10 }}>
-          "Små justeringer i dag kan skape store forandringer i morgen."
+          \"Små justeringer i dag kan skape store forandringer i morgen.\"
         </blockquote>
         <p style={{ marginTop: 5 }}>– Nullfilter GPT</p>
       </div>
