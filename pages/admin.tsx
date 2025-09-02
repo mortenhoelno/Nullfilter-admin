@@ -1,73 +1,60 @@
-'use client'
-
 import { useState } from "react"
 
 export default function AdminPage() {
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [selectedAIDoc, setSelectedAIDoc] = useState<File | null>(null)
+  const [selectedMasterDoc, setSelectedMasterDoc] = useState<File | null>(null)
   const [selectedDocId, setSelectedDocId] = useState<number | null>(null)
-  const [uploadedDocs, setUploadedDocs] = useState<number[]>([])
+  const [uploadedAIDocs, setUploadedAIDocs] = useState<number[]>([])
+  const [uploadedMasterDocs, setUploadedMasterDocs] = useState<number[]>([])
 
-  const documents = [
-    { id: 1, title: "Din metode og filosofi", category: "Master", theme: "Grunnprinsipper, metaforer og stil" },
-    { id: 2, title: "Veiledning: Vektnedgang", category: "Prosess", theme: "Vektnedgang, mat og trening" },
-    { id: 3, title: "Veiledning: Mental helse", category: "Prosess", theme: "Tankekjør og følelsesregulering" },
-    { id: 4, title: "Veiledning: Kombinert tilnærming", category: "Prosess", theme: "Mental helse og vekt sammen" },
-    { id: 5, title: "Målgrupper: Vektnedgang", category: "Profil", theme: "Typiske avatarer for vektnedgang" },
-    { id: 6, title: "Målgrupper: Mental helse", category: "Profil", theme: "Typiske avatarer for mental helse" },
+  const documents = Array.from({ length: 50 }, (_, i) => {
+    const id = i + 1
+    if (id === 1) return { id, title: "Din metode og filosofi", category: "Master", theme: "Grunnprinsipper, metaforer og stil" }
+    if (id === 2) return { id, title: "Veiledning: Vektnedgang", category: "Prosess", theme: "Vektnedgang, mat og trening" }
+    if (id === 3) return { id, title: "Veiledning: Mental helse", category: "Prosess", theme: "Tankekjør og følelsesregulering" }
+    if (id === 4) return { id, title: "Veiledning: Kombinert tilnærming", category: "Prosess", theme: "Mental helse og vekt sammen" }
+    if (id === 5) return { id, title: "Målgrupper: Vektnedgang", category: "Profil", theme: "Typiske avatarer for vektnedgang" }
+    if (id === 6) return { id, title: "Målgrupper: Mental helse", category: "Profil", theme: "Typiske avatarer for mental helse" }
 
-    // Temadokumenter 10–19
-    { id: 10, title: "Tema: Vektnedgang", category: "Tema", theme: "Vektnedgang" },
-    { id: 11, title: "Tema: Trening", category: "Tema", theme: "Trening" },
-    { id: 12, title: "Tema: Kosthold", category: "Tema", theme: "Kosthold" },
-    { id: 13, title: "Tema: Endringspsykologi", category: "Tema", theme: "Endringspsykologi" },
-    { id: 14, title: "Tema: Nevrobiologi", category: "Tema", theme: "Nevrobiologi" },
-    { id: 15, title: "Tema: Bevissthet og underbevissthet", category: "Tema", theme: "Bevissthet og underbevissthet" },
-    { id: 16, title: "Tema: Stress", category: "Tema", theme: "Stress og nervesystem" },
-    { id: 17, title: "Tema: Sorg og livskriser", category: "Tema", theme: "Sorg og traumer" },
-    { id: 18, title: "Tema: Faste", category: "Tema", theme: "Faste og metabolske prosesser" },
-    { id: 19, title: "Tema: Sykdommer", category: "Tema", theme: "Psykisk og fysisk helse" },
+    if (id >= 10 && id <= 19) {
+      const temaer = [
+        "Vektnedgang",
+        "Trening",
+        "Kosthold",
+        "Endringspsykologi",
+        "Nevrobiologi",
+        "Bevissthet og underbevissthet",
+        "Stress",
+        "Sorg og livskriser",
+        "Faste",
+        "Sykdommer"
+      ]
+      return { id, title: `Tema: ${temaer[id - 10]}`, category: "Tema", theme: temaer[id - 10] }
+    }
 
-    // Flere dokumenter og plassholdere
-    { id: 20, title: "Ledig", category: "-", theme: "-" },
-    { id: 21, title: "Ledig", category: "-", theme: "-" },
-    { id: 22, title: "Ledig", category: "-", theme: "-" },
-    { id: 23, title: "Ledig", category: "-", theme: "-" },
-    { id: 24, title: "Ledig", category: "-", theme: "-" },
-    { id: 25, title: "Ledig", category: "-", theme: "-" },
-    { id: 26, title: "Ledig", category: "-", theme: "-" },
-    { id: 27, title: "Ledig", category: "-", theme: "-" },
-    { id: 28, title: "Ledig", category: "-", theme: "-" },
-    { id: 29, title: "Ledig", category: "-", theme: "-" },
-    { id: 30, title: "Ledig", category: "-", theme: "-" },
-    { id: 31, title: "Ledig", category: "-", theme: "-" },
-    { id: 32, title: "Ledig", category: "-", theme: "-" },
-    { id: 33, title: "Ledig", category: "-", theme: "-" },
-    { id: 34, title: "Ledig", category: "-", theme: "-" },
-    { id: 35, title: "Ledig", category: "-", theme: "-" },
-    { id: 36, title: "Ledig", category: "-", theme: "-" },
-    { id: 37, title: "Ledig", category: "-", theme: "-" },
-    { id: 38, title: "Ledig", category: "-", theme: "-" },
-    { id: 39, title: "Ledig", category: "-", theme: "-" },
-    { id: 40, title: "Ledig", category: "-", theme: "-" },
+    if (id >= 41 && id <= 42) {
+      const tema = id === 41 ? "Vektnedgang" : "Mental helse"
+      return { id, title: `Q&A: ${tema}`, category: "Q&A", theme: "Vanlige spørsmål og svar" }
+    }
 
-    // Q&A 41–50
-    { id: 41, title: "Q&A: Vektnedgang", category: "Q&A", theme: "Vanlige spørsmål og svar" },
-    { id: 42, title: "Q&A: Mental helse", category: "Q&A", theme: "Vanlige spørsmål og svar" },
-    { id: 43, title: "Ledig", category: "-", theme: "-" },
-    { id: 44, title: "Ledig", category: "-", theme: "-" },
-    { id: 45, title: "Ledig", category: "-", theme: "-" },
-    { id: 46, title: "Ledig", category: "-", theme: "-" },
-    { id: 47, title: "Ledig", category: "-", theme: "-" },
-    { id: 48, title: "Ledig", category: "-", theme: "-" },
-    { id: 49, title: "Ledig", category: "-", theme: "-" },
-    { id: 50, title: "Ledig", category: "-", theme: "-" },
-  ]
+    return { id, title: "(Ledig)", category: "(Ledig)", theme: "(Ledig)" }
+  })
 
   const handleUpload = () => {
-    if (!selectedFile || selectedDocId === null) return
-    alert(`Laster opp dokument: ${selectedFile.name} som dokument #${selectedDocId}`)
-    setUploadedDocs([...uploadedDocs, selectedDocId])
-    setSelectedFile(null)
+    if (selectedDocId === null) return
+    if (!selectedAIDoc && !selectedMasterDoc) return alert("Du må velge minst én fil.")
+
+    if (selectedAIDoc) {
+      setUploadedAIDocs([...uploadedAIDocs, selectedDocId])
+    }
+    if (selectedMasterDoc) {
+      setUploadedMasterDocs([...uploadedMasterDocs, selectedDocId])
+    }
+
+    alert(`Laster opp dokument ${selectedDocId} med${selectedAIDoc ? " AI-fil" : ""}${selectedAIDoc && selectedMasterDoc ? " og" : ""}${selectedMasterDoc ? " Master-fil" : ""}`)
+
+    setSelectedAIDoc(null)
+    setSelectedMasterDoc(null)
     setSelectedDocId(null)
   }
 
@@ -85,7 +72,8 @@ export default function AdminPage() {
             <th>Tittel</th>
             <th>Kategori</th>
             <th>Tema</th>
-            <th>Status</th>
+            <th>AI</th>
+            <th>Master</th>
           </tr>
         </thead>
         <tbody>
@@ -95,7 +83,8 @@ export default function AdminPage() {
               <td>{doc.title}</td>
               <td>{doc.category}</td>
               <td>{doc.theme}</td>
-              <td>{uploadedDocs.includes(doc.id) ? '✅' : '🔲'}</td>
+              <td>{uploadedAIDocs.includes(doc.id) ? '✅' : '🔲'}</td>
+              <td>{uploadedMasterDocs.includes(doc.id) ? '✅' : '🔲'}</td>
             </tr>
           ))}
         </tbody>
@@ -103,7 +92,7 @@ export default function AdminPage() {
 
       <hr style={{ margin: '40px 0' }} />
 
-      <p style={{ marginBottom: 10 }}>Velg dokumentnummer og last opp filen (.txt eller .md). Dette oppdaterer chatbotens kunnskapsbase med din struktur.</p>
+      <p style={{ marginBottom: 10 }}>Velg dokumentnummer og last opp en eller begge filer (.txt eller .md). Systemet vil lagre og prosessere dem automatisk.</p>
 
       <div style={{ marginBottom: 20 }}>
         <label>
@@ -123,11 +112,23 @@ export default function AdminPage() {
 
       <div style={{ marginBottom: 20 }}>
         <label>
-          <strong>2. Velg fil (.txt eller .md):</strong><br />
+          <strong>2A. AI-dokument (.txt/.md):</strong><br />
           <input
             type="file"
             accept=".txt,.md"
-            onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+            onChange={(e) => setSelectedAIDoc(e.target.files?.[0] || null)}
+            style={{ padding: 10 }}
+          />
+        </label>
+      </div>
+
+      <div style={{ marginBottom: 20 }}>
+        <label>
+          <strong>2B. Master-dokument (.txt/.md):</strong><br />
+          <input
+            type="file"
+            accept=".txt,.md"
+            onChange={(e) => setSelectedMasterDoc(e.target.files?.[0] || null)}
             style={{ padding: 10 }}
           />
         </label>
@@ -135,16 +136,16 @@ export default function AdminPage() {
 
       <button
         onClick={handleUpload}
-        disabled={!selectedFile || selectedDocId === null}
+        disabled={selectedDocId === null || (!selectedAIDoc && !selectedMasterDoc)}
         style={{ background: '#2D88FF', color: 'white', padding: '10px 20px', border: 'none', borderRadius: 6, cursor: 'pointer' }}
       >
-        Last opp dokument
+        Last opp valgte filer
       </button>
 
       <div style={{ marginTop: 40, padding: 20, background: '#fffbe6', borderRadius: 8 }}>
         <h3>💡 Dagens inspirasjonsquote</h3>
         <blockquote style={{ fontStyle: 'italic', marginTop: 10 }}>
-          \"Små justeringer i dag kan skape store forandringer i morgen.\"
+          "Små justeringer i dag kan skape store forandringer i morgen."
         </blockquote>
         <p style={{ marginTop: 5 }}>– Nullfilter GPT</p>
       </div>
