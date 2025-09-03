@@ -8,9 +8,10 @@ import {
   groupByDocNumber,
   type DbDocument,
   type DocGroup,
+  setTitleForKind,
+  syncMissingFiles,
 } from "../utils/docs";
 import { uploadAndFlag } from "../utils/upload";
-import { setTitleForKind } from "../utils/docs";
 
 export default function AdminPage() {
   const [selectedDocId, setSelectedDocId] = useState<number | null>(null);
@@ -60,6 +61,7 @@ export default function AdminPage() {
     try {
       setLoadingList(true);
       setListError(null);
+      await syncMissingFiles(); // 💡 Synk databasen mot faktisk lagring
       const docs = await listDocuments();
       setRows(groupByDocNumber(docs));
     } catch (e: any) {
@@ -193,7 +195,7 @@ export default function AdminPage() {
         <strong>1. Dokumentnummer:</strong>
         <br />
         <select
-          onChange={(e) => setSelectedDocId(e.target.value ? parseInt(e.target.value, 10) : (null as any))}
+          onChange={(e) => setSelectedDocId(e.target.value ? parseInt(e.target.value, 10) : null)}
           value={selectedDocId ?? ""}
         >
           <option value="" disabled>
@@ -220,11 +222,7 @@ export default function AdminPage() {
           <strong>3. Master-dokument:</strong>
           <br />
         </label>
-        <input
-          type="file"
-          accept=".doc,.docx,.pdf,.txt,.md"
-          onChange={(e) => setMasterFile(e.target.files?.[0] || null)}
-        />
+        <input type="file" accept=".doc,.docx,.pdf,.txt,.md" onChange={(e) => setMasterFile(e.target.files?.[0] || null)} />
       </div>
 
       <button
