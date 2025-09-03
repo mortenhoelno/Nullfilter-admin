@@ -129,20 +129,45 @@ export async function syncMissingFiles() {
   const folder = "documents";
   const kinds: ("ai" | "master")[] = ["ai", "master"];
 
-  const found = new Map<number, { has_ai: boolean; has_master: boolean }>();
+  const found = new Map<number, {
+    has_ai: boolean;
+    has_master: boolean;
+    ai_path?: string;
+    master_path?: string;
+  }>();
 
   for (const kind of kinds) {
     const { data: folders, error: listErr } = await supabase.storage.from(folder).list(kind);
     if (listErr) throw new Error(`Kunne ikke hente mapper for ${kind}: ${listErr.message}`);
 
     for (const f of folders ?? []) {
-      if (f.name.match(/^\d+$/)) {
-        const docNumber = parseInt(f.name, 10);
-        const current = found.get(docNumber) ?? { has_ai: false, has_master: false };
-        if (kind === "ai") current.has_ai = true;
-        if (kind === "master") current.has_master = true;
-        found.set(docNumber, current);
+      if (!f.name.match(/^\d+$/)) continue;
+      const docNumber = parseInt(f.name, 10);
+
+      // Sjekk etter filer i denne mappen
+      const { data: files, error: fileErr } = await supabase.storage
+        .from(folder)
+        .list(`${kind}/${docNumber}`);
+      if (fileErr) continue;
+
+      const file = files?.find((f) => f.name !== ".emptyFolderPlaceholder");
+      const path = file ? `${kind}/${docNumber}/${file.name}` : null;
+
+      const current = found.get(docNumber) ?? {
+        has_ai: false,
+        has_master: false,
+      };
+
+      if (kind === "ai") {
+        current.has_ai = !!file;
+        if (path) current.ai_path = path;
       }
+      if (kind === "master") {
+        current.has_master = !!file;
+        if (path) current.master_path = path;
+      }
+
+      found.set(docNumber, current);
     }
   }
 
@@ -153,13 +178,21 @@ export async function syncMissingFiles() {
 
   for (let i = 1; i <= 50; i++) {
     const existing = rows.find((r) => r.doc_number === i);
-    const status = found.get(i) ?? { has_ai: false, has_master: false };
+    const status = found.get(i) ?? {
+      has_ai: false,
+      has_master: false,
+      ai_path: null,
+      master_path: null,
+    };
+
+    const source_path = status.master_path ?? status.ai_path ?? null;
 
     if (existing) {
       updates.push({
         doc_number: i,
         has_ai: status.has_ai,
         has_master: status.has_master,
+        source_path,
       });
     } else if (status.has_ai || status.has_master) {
       updates.push({
@@ -169,6 +202,7 @@ export async function syncMissingFiles() {
         has_master: status.has_master,
         source: "sync",
         version: "v1",
+        source_path,
       });
     }
   }
@@ -179,4 +213,6 @@ export async function syncMissingFiles() {
     });
     if (upsertErr) throw new Error("Feil ved synkronisering: " + upsertErr.message);
   }
+
+  console.log("✅ syncMissingFiles ferdig med filstier");
 }
