@@ -1,18 +1,40 @@
-import { useState } from "react";
-/* ⬇️ Supabase-koblinger */
-import { upsertDocument } from "../utils/docs";
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+
+/* ⬇️ Henter/lagrer dokumenter + opplasting */
+import {
+  upsertDocument,
+  listDocuments,
+  groupByDocNumber,
+  type DbDocument,
+  type DocGroup,
+} from "../utils/docs";
 import { uploadAndFlag } from "../utils/upload";
 
+/* -------------------------------
+   AdminPage
+-------------------------------- */
 export default function AdminPage() {
+  /* Valg + filer */
   const [selectedDocId, setSelectedDocId] = useState<number | null>(null);
   const [aiFile, setAiFile] = useState<File | null>(null);
   const [masterFile, setMasterFile] = useState<File | null>(null);
-  const [uploadedAi, setUploadedAi] = useState<number[]>([]);
-  const [uploadedMaster, setUploadedMaster] = useState<number[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
 
-  const documents = Array.from({ length: 50 }, (_, i) => {
-    const id = i + 1;
-    const docMap: Record<number, any> = {
+  /* Liste fra DB */
+  const [rows, setRows] = useState<DocGroup[]>([]);
+  const [loadingList, setLoadingList] = useState(true);
+  const [listError, setListError] = useState<string | null>(null);
+
+  /* ---------------------------------
+     1) Dokument-katalog (etiketter)
+     – Samme oppsett du hadde før,
+       men brukes nå som “metadata”
+       på toppen av DB-innholdet.
+  ---------------------------------- */
+  const docCatalog = useMemo(() => {
+    const map: Record<number, { title: string; category: string; theme: string }> = {
       1: { title: "Din metode og filosofi", category: "Master", theme: "Grunnprinsipper, metaforer og stil" },
       2: { title: "Veiledning: Vektnedgang", category: "Prosess", theme: "Vektnedgang, mat og trening" },
       3: { title: "Veiledning: Mental helse", category: "Prosess", theme: "Tankekjør og følelsesregulering" },
@@ -32,27 +54,74 @@ export default function AdminPage() {
       41: { title: "Q&A: Vektnedgang", category: "Q&A", theme: "Vanlige spørsmål og svar" },
       42: { title: "Q&A: Mental helse", category: "Q&A", theme: "Vanlige spørsmål og svar" },
     };
-    return {
-      id,
-      title: docMap[id]?.title || `(Ledig)`,
-      category: docMap[id]?.category || "-",
-      theme: docMap[id]?.theme || "-",
-    };
-  });
 
-  const handleUpload = async () => {
+    // Lag en liste #1..50 med labels
+    return Array.from({ length: 50 }, (_, i) => {
+      const id = i + 1;
+      const meta = map[id];
+      return {
+        id,
+        title: meta?.title ?? "(Ledig)",
+        category: meta?.category ?? "-",
+        theme: meta?.theme ?? "-",
+      };
+    });
+  }, []);
+
+  /* ---------------------------------
+     2) Hent fra DB ved mount + refresh
+  ---------------------------------- */
+  async function refreshList() {
     try {
-      if (!selectedDocId || (!aiFile && !masterFile)) return;
+      setLoadingList(true);
+      setListError(null);
+      const docs = await listDocuments();
+      setRows(groupByDocNumber(docs));
+    } catch (e: any) {
+      console.error(e);
+      setListError(e?.message ?? "Kunne ikke hente dokumenter");
+    } finally {
+      setLoadingList(false);
+    }
+  }
 
-      const doc = documents.find((d) => d.id === selectedDocId);
-      const title = doc?.title || `(Ledig)`;
-      const category = doc?.category === "-" ? null : doc?.category || null;
-      const theme = doc?.theme === "-" ? null : doc?.theme || null;
+  useEffect(() => {
+    refreshList();
+  }, []);
 
-      // 1) Sørg for at dokumentet finnes i DB (eller oppdateres)
-      await upsertDocument({ docNumber: selectedDocId, title, category, theme });
+  /* Hjelper: finn gruppekort for gitt docNumber */
+  function getGroup(num: number): DocGroup | undefined {
+    return rows.find((g) => g.docNumber === num);
+  }
 
-      // 2) Last opp filer + sett flagg i DB
+  /* ---------------------------------
+     3) Opplasting
+  ---------------------------------- */
+  async function handleUpload() {
+    try {
+      if (!selectedDocId || (!aiFile && !masterFile)) {
+        alert("Velg dokumentnummer og minst én fil (AI og/eller Master).");
+        return;
+      }
+
+      // Katalog-labels for valgt nummer
+      const label = docCatalog.find((d) => d.id === selectedDocId);
+      const title = label?.title ?? "(Ledig)";
+      const category = label?.category === "-" ? null : label?.category ?? null;
+      const theme = label?.theme === "-" ? null : label?.theme ?? null;
+
+      setIsUploading(true);
+
+      // 1) Sørg for at dokumentrekke finnes/oppdateres
+      await upsertDocument({
+        docNumber: selectedDocId,
+        title,
+        category,
+        theme,
+      });
+
+      // 2) Last opp valgt(e) fil(er) → sørger for å skrive
+      //    is_master/source_path/sha256 + flagg i DB (i serverkode)
       if (aiFile) {
         await uploadAndFlag({ file: aiFile, docNumber: selectedDocId, kind: "ai" });
       }
@@ -60,29 +129,43 @@ export default function AdminPage() {
         await uploadAndFlag({ file: masterFile, docNumber: selectedDocId, kind: "master" });
       }
 
-      // 3) Lokal UI-status (checkmarks)
-      if (aiFile) setUploadedAi((prev) => Array.from(new Set([...prev, selectedDocId])));
-      if (masterFile) setUploadedMaster((prev) => Array.from(new Set([...prev, selectedDocId])));
-
-      alert(`Opplastet dokument #${selectedDocId}
-AI: ${aiFile?.name || "Ingen"}
-Master: ${masterFile?.name || "Ingen"}`);
-
+      // 3) Rydd opp UI + refetch liste fra DB
       setAiFile(null);
       setMasterFile(null);
       setSelectedDocId(null);
-    } catch (err: any) {
-      alert("Feil ved opplasting: " + err.message);
-    }
-  };
 
+      await refreshList();
+
+      alert(
+        `Opplastet dokument #${selectedDocId}\nAI: ${aiFile?.name || "Ingen"}\nMaster: ${masterFile?.name || "Ingen"}`
+      );
+    } catch (err: any) {
+      console.error(err);
+      alert("Feil ved opplasting: " + (err?.message ?? "Ukjent feil"));
+    } finally {
+      setIsUploading(false);
+    }
+  }
+
+  /* ---------------------------------
+     4) UI
+  ---------------------------------- */
   return (
-    <div style={{ padding: 40, fontFamily: "Arial, sans-serif" }}>
+    <div style={{ padding: 40, fontFamily: "Arial, sans-serif", maxWidth: 1100, margin: "0 auto" }}>
       <h1 style={{ fontSize: 32 }}>🧠 NULL FILTER Chatbot</h1>
       <h2 style={{ fontSize: 22, marginBottom: 30 }}>Admin-side for opplasting av dokumenter</h2>
 
-      <h2 style={{ fontSize: 22 }}>🗂️ Statusoversikt</h2>
-      <table border={1} cellPadding={10} style={{ borderCollapse: "collapse", width: "100%" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+        <h2 style={{ fontSize: 22, margin: 0 }}>🗂️ Statusoversikt</h2>
+        <button onClick={refreshList} disabled={loadingList} style={{ padding: "6px 12px" }}>
+          {loadingList ? "Laster…" : "Oppdater liste"}
+        </button>
+      </div>
+
+      {listError && <p style={{ color: "crimson" }}>{listError}</p>}
+
+      {/* Tabell som kombinerer katalog (labels) + DB-status */}
+      <table border={1} cellPadding={10} style={{ borderCollapse: "collapse", width: "100%", marginTop: 8 }}>
         <thead>
           <tr style={{ backgroundColor: "#f0f0f0" }}>
             <th>#</th>
@@ -91,19 +174,33 @@ Master: ${masterFile?.name || "Ingen"}`);
             <th>Tema</th>
             <th>AI</th>
             <th>Master</th>
+            <th>Kilde (path)</th>
+            <th>Opprettet</th>
           </tr>
         </thead>
         <tbody>
-          {documents.map((doc) => (
-            <tr key={doc.id}>
-              <td>{doc.id}</td>
-              <td>{doc.title}</td>
-              <td>{doc.category}</td>
-              <td>{doc.theme}</td>
-              <td>{uploadedAi.includes(doc.id) ? "✅" : "🔲"}</td>
-              <td>{uploadedMaster.includes(doc.id) ? "✅" : "🔲"}</td>
-            </tr>
-          ))}
+          {docCatalog.map((cat) => {
+            const g = getGroup(cat.id); // DB-gruppe for dette nummeret
+            const ai = g?.ai;
+            const master = g?.master;
+            const createdAt = master?.created_at || ai?.created_at || null;
+            const sourcePath = master?.source_path || ai?.source_path || "";
+
+            return (
+              <tr key={cat.id}>
+                <td>{cat.id}</td>
+                <td>{cat.title}</td>
+                <td>{cat.category}</td>
+                <td>{cat.theme}</td>
+                <td>{ai ? "✅" : "🔲"}</td>
+                <td>{master ? "✅" : "🔲"}</td>
+                <td style={{ maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <small title={sourcePath}>{sourcePath || "—"}</small>
+                </td>
+                <td>{createdAt ? new Date(createdAt).toLocaleString() : "—"}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
 
@@ -141,18 +238,20 @@ Master: ${masterFile?.name || "Ingen"}`);
         </p>
       </div>
 
-      <p style={{ marginTop: 16 }}>
-        Velg dokumentnummer og last opp AI- og/eller Master-dokument.
-      </p>
+      <p style={{ marginTop: 16 }}>Velg dokumentnummer og last opp AI- og/eller Master-dokument.</p>
 
+      {/* Velger */}
       <label>
         <strong>1. Dokumentnummer:</strong>
         <br />
-        <select onChange={(e) => setSelectedDocId(parseInt(e.target.value))} value={selectedDocId ?? ""}>
+        <select
+          onChange={(e) => setSelectedDocId(e.target.value ? parseInt(e.target.value, 10) : (null as any))}
+          value={selectedDocId ?? ""}
+        >
           <option value="" disabled>
             Velg dokument…
           </option>
-          {documents.map((doc) => (
+          {docCatalog.map((doc) => (
             <option key={doc.id} value={doc.id}>
               #{doc.id} – {doc.title}
             </option>
@@ -164,38 +263,35 @@ Master: ${masterFile?.name || "Ingen"}`);
         <label>
           <strong>2. AI-dokument:</strong>
           <br />
-          <input
-            type="file"
-            accept=".txt,.md"
-            onChange={(e) => setAiFile(e.target.files?.[0] || null)}
-          />
         </label>
+        <input type="file" accept=".txt,.md" onChange={(e) => setAiFile(e.target.files?.[0] || null)} />
       </div>
 
       <div style={{ marginBottom: 20 }}>
         <label>
           <strong>3. Master-dokument:</strong>
           <br />
-          <input
-            type="file"
-            accept=".doc,.docx,.pdf,.txt,.md"
-            onChange={(e) => setMasterFile(e.target.files?.[0] || null)}
-          />
         </label>
+        <input
+          type="file"
+          accept=".doc,.docx,.pdf,.txt,.md"
+          onChange={(e) => setMasterFile(e.target.files?.[0] || null)}
+        />
       </div>
 
       <button
         onClick={handleUpload}
-        disabled={!selectedDocId || (!aiFile && !masterFile)}
+        disabled={!selectedDocId || (!aiFile && !masterFile) || isUploading}
         style={{
           background: "#2D88FF",
           color: "white",
           padding: "10px 20px",
           border: "none",
           borderRadius: 6,
+          cursor: !selectedDocId || (!aiFile && !masterFile) || isUploading ? "not-allowed" : "pointer",
         }}
       >
-        Last opp dokument(er)
+        {isUploading ? "Laster opp…" : "Last opp dokument(er)"}
       </button>
 
       <div style={{ marginTop: 40, background: "#fffbe6", padding: 20, borderRadius: 8 }}>
