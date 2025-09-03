@@ -1,7 +1,7 @@
-// FERDIG VERSJON: pages/chat-nullfilter/index.js med personaConfig
+// FERDIG VERSJON: pages/chat-nullfilter/index.js med Supabase-lagring
 
 import { useState, useEffect } from "react";
-import { createConversation, saveMessage } from "../../utils/storage";
+import { createConversation, saveMessage, getConversationByEmail } from "../../utils/storage";
 import ChatEngine from "../../components/ChatEngine";
 import personaConfig from "../../config/personaConfig";
 /** @typedef {import('../../types').Message} Message */
@@ -20,29 +20,40 @@ export default function NullFilterChat() {
   ]);
 
   useEffect(() => {
-    if (useMemory && email && !conversation) {
-      const conv = createConversation(email);
-      setConversation(conv);
-    }
+    const loadConversation = async () => {
+      if (useMemory && email && !conversation) {
+        const existing = await getConversationByEmail(email, config.slug);
+        if (existing) {
+          setConversation(existing);
+          if (existing.messages?.length > 0) {
+            setMessages(existing.messages);
+          }
+        } else {
+          const newConv = await createConversation(email, config.slug);
+          setConversation(newConv);
+        }
+      }
+    };
+    loadConversation();
   }, [useMemory, email]);
 
-  const appendBotPlaceholder = () => {
+  const appendBotPlaceholder = async () => {
     const reply = {
       role: "assistant",
       content: "(Jeg er her – konkret tips kommer snart!)",
     };
     setMessages((prev) => [...prev, reply]);
-    if (conversation) saveMessage(conversation.id, reply);
+    if (conversation) await saveMessage(conversation.id, reply);
   };
 
-  const sendMessage = (text) => {
+  const sendMessage = async (text) => {
     const toSend = (text ?? chatInput).trim();
     if (!toSend) return;
 
     const newMessage = { role: "user", content: toSend };
     setMessages((prev) => [...prev, newMessage]);
     setChatInput("");
-    if (conversation) saveMessage(conversation.id, newMessage);
+    if (conversation) await saveMessage(conversation.id, newMessage);
 
     setTimeout(() => appendBotPlaceholder(), 400);
   };
