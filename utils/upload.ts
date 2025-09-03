@@ -20,7 +20,13 @@ export async function uploadAndFlag({
   // NB: Bygg hele pathen manuelt (ikke bruk pathFor som tar original)
   const storagePath = `${kind}/${docNumber}/${safeName}`;
 
-  // 2) Last opp til Storage
+  // 2) Regn ut SHA-256 hash
+  const buffer = await file.arrayBuffer();
+  const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const sha256 = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+
+  // 3) Last opp til Storage
   const { error: upErr } = await supabase.storage
     .from(storageBucket)
     .upload(storagePath, file, {
@@ -33,8 +39,12 @@ export async function uploadAndFlag({
     throw upErr;
   }
 
-  // 3) Oppdater flagg i DB
-  const patch = kind === 'master' ? { has_master: true } : { has_ai: true };
+  // 4) Oppdater flagg + path + sha256 i DB
+  const patch = {
+    source_path: storagePath,
+    sha256,
+    ...(kind === 'master' ? { has_master: true } : { has_ai: true }),
+  };
 
   const { data, error: updErr } = await supabase
     .from('documents')
@@ -48,5 +58,5 @@ export async function uploadAndFlag({
     throw updErr;
   }
 
-  return { storagePath, document: data };
+  return { storagePath, sha256, document: data };
 }
