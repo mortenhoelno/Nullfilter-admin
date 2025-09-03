@@ -76,6 +76,12 @@ const [customTheme, setCustomTheme] = useState("");
       await syncMissingFiles(); // 💡 Synk databasen mot faktisk lagring
       const docs = await listDocuments();
       setRows(groupByDocNumber(docs));
+      const unique = <T,>(arr: T[]): T[] => Array.from(new Set(arr)).filter((v) => !!v);
+
+setExistingTitles(unique(docs.map((d) => d.title)));
+setExistingCategories(unique(docs.map((d) => d.category ?? "").filter(Boolean)));
+setExistingThemes(unique(docs.map((d) => d.theme ?? "").filter(Boolean)));
+
     } catch (e: any) {
       console.error(e);
       setListError(e?.message ?? "Kunne ikke hente dokumenter");
