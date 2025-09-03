@@ -1,6 +1,8 @@
 // FERDIG VERSJON: src/utils/storage.js med Supabase-integrasjon
 
-import { supabase } from "./supabaseClient";
+import { supabaseBrowser } from './supabaseClient';
+const supabase = supabaseBrowser();
+
 import { TABLES, conversationFields, messageFields } from "../config/supabaseSchema";
 
 export const createConversation = async (email, bot = "nullfilter") => {
