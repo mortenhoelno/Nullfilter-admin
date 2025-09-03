@@ -193,9 +193,9 @@ if (masterFile) {
         <tbody>
           {docCatalog.map((cat) => {
             const g = getGroup(cat.id); // DB-gruppe for dette nummeret
-            const ai = g?.ai;
-            const master = g?.master;
-            const createdAt = master?.created_at || ai?.created_at || null;
+            const ai = g?.ai as DbDocument | undefined;
+const master = g?.master as DbDocument | undefined;
+const createdAt = master?.created_at || ai?.created_at || null;
             const sourcePath = master?.source_path || ai?.source_path || "";
 
             return (
