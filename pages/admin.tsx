@@ -178,8 +178,11 @@ export default function AdminPage() {
                 <td>{ai ? "✅" : "🔲"}</td>
                 <td>{master ? "✅" : "🔲"}</td>
                 <td style={{ maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  <small title={sourcePath}>{sourcePath || "—"}</small>
-                </td>
+  <small title={sourcePath}>
+    {sourcePath ? sourcePath.split("/").pop() : "—"}
+  </small>
+</td>
+
                 <td>{createdAt ? new Date(createdAt).toLocaleString() : "—"}</td>
               </tr>
             );
