@@ -1,8 +1,8 @@
-// 🆕 NY FIL: pages/chat-nullfilter/index.js
-// Denne filen er startsiden for chatboten NullFilter
+// FERDIG VERSJON: pages/chat-nullfilter/index.js med ChatEngine
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { createConversation, saveMessage } from "../../utils/storage";
+import ChatEngine from "../../components/ChatEngine";
 /** @typedef {import('../../types').Message} Message */
 /** @typedef {import('../../types').Conversation} Conversation */
 
@@ -15,13 +15,6 @@ export default function NullFilterChat() {
   const [messages, setMessages] = useState([
     { role: "assistant", content: "Hei! Jeg er Null Filter. Hva vil du prate om i dag?" },
   ]);
-
-  const listRef = useRef(null);
-  useEffect(() => {
-    if (listRef.current) {
-      listRef.current.scrollTop = listRef.current.scrollHeight;
-    }
-  }, [messages]);
 
   useEffect(() => {
     if (useMemory && email && !conversation) {
@@ -67,6 +60,7 @@ export default function NullFilterChat() {
   return (
     <div className="min-h-screen bg-gray-50 px-4 py-8 sm:px-6 lg:px-8">
       <div className="max-w-3xl mx-auto space-y-6">
+        {/* Avatar + intro */}
         <div className="flex justify-center">
           <img
             src="/avatar-nullfilter.png"
@@ -83,14 +77,15 @@ export default function NullFilterChat() {
           </p>
         </div>
 
+        {/* Disclaimer */}
         <div className="bg-yellow-100 border border-yellow-300 text-yellow-800 p-4 rounded-md text-sm">
           <p>
-            ❗ Dette er ikke medisinsk hjelp eller akutt krisehjelp. Hvis du er i
-            fare eller har selvmordstanker, kontakt legevakt på 116 117 eller ring
-            113.
+            ❗ Dette er ikke medisinsk hjelp eller akutt krisehjelp. Hvis du er i fare eller har selvmordstanker,
+            kontakt legevakt på 116 117 eller ring 113.
           </p>
         </div>
 
+        {/* Brukertypevalg */}
         <div className="space-y-2">
           <p className="font-medium">Hvordan vil du bruke chatboten?</p>
           <label className="flex items-center gap-2">
@@ -124,6 +119,7 @@ export default function NullFilterChat() {
           )}
         </div>
 
+        {/* Startbobler */}
         <div className="space-y-2">
           <p className="font-medium">Hva vil du snakke om? Trykk på en boble:</p>
           <div className="flex flex-wrap gap-2">
@@ -139,41 +135,14 @@ export default function NullFilterChat() {
           </div>
         </div>
 
-        <div
-          ref={listRef}
-          className="mt-6 bg-white border rounded-md p-4 shadow-sm max-h-[60vh] overflow-y-auto space-y-3"
-        >
-          {messages.map((m, i) => (
-            <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-              <div
-                className={`px-3 py-2 rounded-2xl text-sm shadow max-w-[85%] whitespace-pre-wrap ${
-                  m.role === "user" ? "bg-blue-100" : "bg-gray-100"
-                }`}
-              >
-                {m.content}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <div className="mt-3 flex gap-2">
-          <input
-            type="text"
-            className="flex-1 border px-3 py-2 rounded"
-            placeholder="Skriv en melding..."
-            value={chatInput}
-            onChange={(e) => setChatInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") sendMessage();
-            }}
-          />
-          <button
-            onClick={() => sendMessage()}
-            className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
-          >
-            Send
-          </button>
-        </div>
+        {/* ChatEngine */}
+        <ChatEngine
+          messages={messages}
+          input={chatInput}
+          setInput={setChatInput}
+          onSend={sendMessage}
+          themeColor="blue"
+        />
       </div>
     </div>
   );
