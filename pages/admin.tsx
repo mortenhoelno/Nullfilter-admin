@@ -230,45 +230,84 @@ setExistingThemes(unique(docs.map((d) => d.theme ?? "").filter(Boolean)));
     </label>
   </div>
 
-  <div>
-    <label>
-      <strong>Tittel:</strong><br />
-      <input
-        type="text"
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        placeholder="F.eks. Veiledning: Stress"
-        style={{ width: 250 }}
-      />
-    </label>
-  </div>
-
-  <div>
-    <label>
-      <strong>Kategori:</strong><br />
-      <input
-        type="text"
-        value={category}
-        onChange={(e) => setCategory(e.target.value)}
-        placeholder="F.eks. Prosess"
-        style={{ width: 150 }}
-      />
-    </label>
-  </div>
-
-  <div>
-    <label>
-      <strong>Tema:</strong><br />
-      <input
-        type="text"
-        value={theme}
-        onChange={(e) => setTheme(e.target.value)}
-        placeholder="F.eks. Stress og nervesystem"
-        style={{ width: 200 }}
-      />
-    </label>
-  </div>
+<div>
+  <label><strong>Tittel:</strong><br />
+    <select
+      value={title}
+      onChange={(e) => setTitle(e.target.value)}
+      style={{ width: 250 }}
+    >
+      <option value="">Velg eksisterende tittel…</option>
+      {existingTitles.map((t, i) => (
+        <option key={i} value={t}>{t}</option>
+      ))}
+    </select>
+    <br />
+    <input
+      type="text"
+      value={customTitle}
+      onChange={(e) => {
+        setCustomTitle(e.target.value);
+        setTitle(e.target.value);
+      }}
+      placeholder="Eller skriv ny tittel"
+      style={{ width: 250, marginTop: 6 }}
+    />
+  </label>
 </div>
+
+<div>
+  <label><strong>Kategori:</strong><br />
+    <select
+      value={category}
+      onChange={(e) => setCategory(e.target.value)}
+      style={{ width: 150 }}
+    >
+      <option value="">Velg kategori…</option>
+      {existingCategories.map((c, i) => (
+        <option key={i} value={c}>{c}</option>
+      ))}
+    </select>
+    <br />
+    <input
+      type="text"
+      value={customCategory}
+      onChange={(e) => {
+        setCustomCategory(e.target.value);
+        setCategory(e.target.value);
+      }}
+      placeholder="Eller skriv ny kategori"
+      style={{ width: 150, marginTop: 6 }}
+    />
+  </label>
+</div>
+
+<div>
+  <label><strong>Tema:</strong><br />
+    <select
+      value={theme}
+      onChange={(e) => setTheme(e.target.value)}
+      style={{ width: 200 }}
+    >
+      <option value="">Velg tema…</option>
+      {existingThemes.map((t, i) => (
+        <option key={i} value={t}>{t}</option>
+      ))}
+    </select>
+    <br />
+    <input
+      type="text"
+      value={customTheme}
+      onChange={(e) => {
+        setCustomTheme(e.target.value);
+        setTheme(e.target.value);
+      }}
+      placeholder="Eller skriv nytt tema"
+      style={{ width: 200, marginTop: 6 }}
+    />
+  </label>
+</div>
+
 
 
       <div style={{ margin: "20px 0" }}>
