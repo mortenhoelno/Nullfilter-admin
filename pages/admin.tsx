@@ -309,6 +309,17 @@ setExistingThemes(unique(docs.map((d) => d.theme ?? "").filter(Boolean)));
     />
   </label>
 </div>
+        
+<div>
+  <label><strong>Kategori:</strong><br />
+    ...
+  </label>
+</div>
+<div>
+  <label><strong>Tema:</strong><br />
+    ...
+  </label>
+</div>
 
 </div>
       <div style={{ margin: "20px 0" }}>
