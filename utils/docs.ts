@@ -1,8 +1,8 @@
 // utils/docs.ts
-import { supabase } from "./supabase";              // din eksisterende server-klient
+import { supabase } from "./supabase";              // server-klient
 import { supabaseBrowser } from "./supabaseClient"; // nettleser-klient (ANON) for lesing
 
-/** DB-modell for documents-tabellen (tilpass ved behov) */
+/** DB-modell for documents-tabellen */
 export type DbDocument = {
   id: string;               // uuid
   title: string;
@@ -11,15 +11,15 @@ export type DbDocument = {
   theme?: string | null;
   version?: string | null;
   source?: string | null;
-  is_master?: boolean | null;
+  has_master?: boolean;
+  has_ai?: boolean;
   source_path?: string | null;
   sha256?: string | null;
   created_at?: string | null;
 };
 
 /**
- * Opprett/oppdater dokument-metadata (DIN EKSISTERENDE FUNKSJON)
- * NB: Upsert'er på doc_number slik du hadde det.
+ * Opprett/oppdater dokument-metadata
  */
 export async function upsertDocument({
   docNumber,
@@ -67,7 +67,6 @@ export async function listDocuments(): Promise<DbDocument[]> {
     .from("documents")
     .select("*")
     .order("doc_number", { ascending: true })
-    .order("is_master", { ascending: false })   // vis master først for samme doc_number
     .order("created_at", { ascending: false });
 
   if (error) throw error;
@@ -75,7 +74,7 @@ export async function listDocuments(): Promise<DbDocument[]> {
 }
 
 /**
- * Gruppér dokumenter pr. doc_number slik at Master/AI vises side-by-side
+ * Gruppér dokumenter pr. doc_number
  */
 export type DocGroup = {
   docNumber: number;
@@ -87,18 +86,15 @@ export function groupByDocNumber(rows: DbDocument[]): DocGroup[] {
   const map = new Map<number, DocGroup>();
   for (const r of rows) {
     const g = map.get(r.doc_number) ?? { docNumber: r.doc_number };
-    if (r.is_master) g.master = r;
-    else g.ai = r;
+    if (r.has_master) g.master = r;
+    if (r.has_ai) g.ai = r;
     map.set(r.doc_number, g);
   }
   return Array.from(map.values()).sort((a, b) => a.docNumber - b.docNumber);
 }
-// utils/docs.ts (legg til nederst i fila)
 
 /**
- * Sett/oppdater tittel for et dokumentnummer + type (AI/Master).
- * Brukes for å lagre filnavn (uten endelse) som tittel når vi laster opp.
- * onConflict på (doc_number, is_master) sikrer riktig rad.
+ * Sett/oppdater tittel for dokument (AI eller Master)
  */
 export async function setTitleForKind(params: {
   docNumber: number;
@@ -107,22 +103,15 @@ export async function setTitleForKind(params: {
 }) {
   const { docNumber, isMaster, title } = params;
 
-  // Importeres dynamisk for å unngå sirkulær import i noen oppsett
-  const { supabase } = await import("./supabase");
+  const patch = {
+    title,
+    source: "admin",
+  };
 
   const { data, error } = await supabase
     .from("documents")
-    .upsert(
-      [
-        {
-          doc_number: docNumber,
-          is_master: isMaster,
-          title,
-          source: "admin", // valgfritt – hyggelig å ha
-        },
-      ],
-      { onConflict: "doc_number,is_master" }
-    )
+    .update(patch)
+    .eq("doc_number", docNumber)
     .select()
     .single();
 
