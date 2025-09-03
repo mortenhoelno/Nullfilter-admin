@@ -9,7 +9,6 @@ import {
   type DbDocument,
   type DocGroup,
   setTitleForKind,
-  syncMissingFiles,
 } from "../utils/docs";
 import { uploadAndFlag } from "../utils/upload";
 
