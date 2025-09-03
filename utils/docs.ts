@@ -146,3 +146,41 @@ export async function clearDocumentMetadata(docNumber: number, kind: "ai" | "mas
   if (error) throw error;
   return data as DbDocument;
 }
+/**
+ * Tøm metadata hvis fil mangler i Supabase Storage
+ */
+export async function syncMissingFiles(): Promise<void> {
+  const { data: docs, error } = await supabase
+    .from("documents")
+    .select("id, doc_number, has_ai, has_master, source_path");
+
+  if (error) throw error;
+  if (!docs || docs.length === 0) return;
+
+  const updates = [];
+
+  for (const doc of docs) {
+    const path = doc.source_path;
+    if (!path) continue;
+
+    const { data: file, error: fileError } = await supabase.storage
+      .from("documents")
+      .list(path.split("/").slice(0, -1).join("/"), { search: path.split("/").pop() });
+
+    const fileExists = file && file.length > 0;
+    if (!fileExists) {
+      updates.push({
+        id: doc.id,
+        doc_number: doc.doc_number,
+        ...(doc.has_ai ? { has_ai: false } : {}),
+        ...(doc.has_master ? { has_master: false } : {}),
+        source_path: null,
+        sha256: null,
+      });
+    }
+  }
+
+  for (const patch of updates) {
+    await supabase.from("documents").update(patch).eq("id", patch.id);
+  }
+}
