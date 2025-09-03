@@ -1,19 +1,22 @@
-// FERDIG VERSJON: pages/chat-keepertrening/index.js med ChatEngine
+// FERDIG VERSJON: pages/chat-keepertrening/index.js med personaConfig
 
 import { useState, useEffect } from "react";
 import { createConversation, saveMessage } from "../../utils/storage";
 import ChatEngine from "../../components/ChatEngine";
+import personaConfig from "../../config/personaConfig";
 /** @typedef {import('../../types').Message} Message */
 /** @typedef {import('../../types').Conversation} Conversation */
 
-export default function KeeperChat() {
+const config = personaConfig.keepertrening;
+
+export default function KeepertreningChat() {
   const [useMemory, setUseMemory] = useState(false);
   const [email, setEmail] = useState("");
   const [consentToFollowUp, setConsentToFollowUp] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [conversation, setConversation] = useState(null);
   const [messages, setMessages] = useState([
-    { role: "assistant", content: "Hei, keeper! Klar for å trene både kropp og hode? 💪🧠" },
+    { role: "assistant", content: config.intro },
   ]);
 
   useEffect(() => {
@@ -23,18 +26,10 @@ export default function KeeperChat() {
     }
   }, [useMemory, email]);
 
-  const starterMessages = [
-    "Hvordan får jeg mer selvtillit i mål?",
-    "Jeg blir nervøs før kamp",
-    "Hvordan trener jeg mental styrke?",
-    "Hvordan takle tabber uten å miste fokus?",
-    "Jeg føler at treneren ikke har tro på meg",
-  ];
-
   const appendBotPlaceholder = () => {
     const reply = {
       role: "assistant",
-      content: "(La oss jobbe med dette sammen – konkret tips kommer snart!)",
+      content: "(Vi jobber med spillet – svar kommer snart!)",
     };
     setMessages((prev) => [...prev, reply]);
     if (conversation) saveMessage(conversation.id, reply);
@@ -58,23 +53,28 @@ export default function KeeperChat() {
   };
 
   return (
-    <div className="min-h-screen bg-white px-4 py-8 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-gray-50 px-4 py-8 sm:px-6 lg:px-8">
       <div className="max-w-3xl mx-auto space-y-6">
         {/* Avatar + intro */}
         <div className="flex justify-center">
           <img
-            src="/avatar-keepertrening.png"
-            alt="KeeperBot"
+            src={config.avatar}
+            alt={config.name}
             className="w-32 h-32 rounded-full border border-gray-300 shadow"
           />
         </div>
 
         <div className="text-center">
-          <h1 className="text-3xl font-bold">🥅 Keepertrening – Mental styrke</h1>
-          <p className="mt-2 text-gray-600">
-            Her trener vi mer enn reflekser. Jeg hjelper deg tenke som en proff.
-          </p>
+          <h1 className="text-3xl font-bold">{config.name}</h1>
+          <p className="mt-2 text-gray-600">{config.description}</p>
         </div>
+
+        {/* Disclaimer hvis satt */}
+        {config.disclaimer && (
+          <div className="bg-yellow-100 border border-yellow-300 text-yellow-800 p-4 rounded-md text-sm">
+            <p>{config.disclaimer}</p>
+          </div>
+        )}
 
         {/* Brukertypevalg */}
         <div className="space-y-2">
@@ -105,7 +105,7 @@ export default function KeeperChat() {
                 checked={consentToFollowUp}
                 onChange={(e) => setConsentToFollowUp(e.target.checked)}
               />
-              Send meg en hyggelig oppfølging på e-post etter samtalen
+              Send meg en oppfølging på e-post etter samtalen
             </label>
           )}
         </div>
@@ -114,7 +114,7 @@ export default function KeeperChat() {
         <div className="space-y-2">
           <p className="font-medium">Hva vil du snakke om? Trykk på en boble:</p>
           <div className="flex flex-wrap gap-2">
-            {starterMessages.map((msg, idx) => (
+            {config.starters.map((msg, idx) => (
               <button
                 key={idx}
                 onClick={() => handleStarterClick(msg)}
@@ -132,7 +132,7 @@ export default function KeeperChat() {
           input={chatInput}
           setInput={setChatInput}
           onSend={sendMessage}
-          themeColor="green"
+          themeColor={config.themeColor}
         />
       </div>
     </div>
