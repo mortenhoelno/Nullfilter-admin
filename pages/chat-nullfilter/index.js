@@ -1,7 +1,8 @@
-// FERDIG VERSJON: pages/chat-nullfilter/index.js med Supabase-lagring
+// FERDIG VERSJON: pages/chat-nullfilter/index.js med RAG og AI-svar
 
 import { useState, useEffect } from "react";
 import { createConversation, saveMessage, getConversationByEmail } from "../../utils/storage";
+import { getRagContext } from "../../utils/rag";
 import ChatEngine from "../../components/ChatEngine";
 import personaConfig from "../../config/personaConfig";
 /** @typedef {import('../../types').Message} Message */
@@ -37,25 +38,59 @@ export default function NullFilterChat() {
     loadConversation();
   }, [useMemory, email]);
 
-  const appendBotPlaceholder = async () => {
-    const reply = {
-      role: "assistant",
-      content: "(Jeg er her – konkret tips kommer snart!)",
-    };
-    setMessages((prev) => [...prev, reply]);
-    if (conversation) await saveMessage(conversation.id, reply);
-  };
-
   const sendMessage = async (text) => {
     const toSend = (text ?? chatInput).trim();
     if (!toSend) return;
 
-    const newMessage = { role: "user", content: toSend };
-    setMessages((prev) => [...prev, newMessage]);
+    const userMessage = { role: "user", content: toSend };
+    setMessages((prev) => [...prev, userMessage]);
     setChatInput("");
-    if (conversation) await saveMessage(conversation.id, newMessage);
+    if (conversation) await saveMessage(conversation.id, userMessage);
 
-    setTimeout(() => appendBotPlaceholder(), 400);
+    // 🔍 Hent RAG-kontekst
+    const { contextText } = await getRagContext(toSend);
+
+    const ragBlock = contextText
+      ? `Du har følgende relevante utdrag (med kildehenvisning):\n\n${contextText}\n\n`
+      : "";
+
+    const systemPrompt = `
+Du er ${config.name} – varm, klok og ekte.
+Bruk konteksten under når du svarer. Ikke gjett. Si ifra hvis noe mangler.
+
+${ragBlock}
+`;
+
+    const fullMessages = [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: toSend }
+    ];
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: fullMessages, personaId: config.slug })
+      });
+
+      const data = await res.json();
+      const reply = {
+        role: "assistant",
+        content: data.reply || "Beklager, jeg klarte ikke svare akkurat nå."
+      };
+
+      setMessages((prev) => [...prev, reply]);
+      if (conversation) await saveMessage(conversation.id, reply);
+    } catch (err) {
+      console.error(err);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: "En feil oppsto under samtalen. Prøv igjen senere."
+        }
+      ]);
+    }
   };
 
   const handleStarterClick = (msg) => {
