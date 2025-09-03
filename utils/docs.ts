@@ -120,70 +120,7 @@ export async function setTitleForKind(params: {
   return data as DbDocument;
 }
 
-/**
- * Synkroniser databasen med faktiske filer i storage
- */
-export async function syncMissingFiles() {
-  const { data: allDocs, error } = await supabase.from("documents").select("*");
-  if (error) throw error;
 
-  const existingMap = new Map<number, DbDocument>();
-  for (const d of allDocs ?? []) {
-    existingMap.set(d.doc_number, d);
-  }
-
-  const { data: storageFiles, error: storageError } = await supabase.storage
-    .from("documents")
-    .list("", { limit: 200 });
-
-  if (storageError) throw storageError;
-
-  const updates: Partial<DbDocument & { doc_number: number }>[] = [];
-  const inserts: Partial<DbDocument & { doc_number: number }>[] = [];
-
-  for (const file of storageFiles ?? []) {
-    const match = file.name.match(/^(\d+)-(master|ai)\./);
-    if (!match) continue;
-
-    const docNumber = parseInt(match[1], 10);
-    const kind = match[2] as "ai" | "master";
-    const existing = existingMap.get(docNumber);
-
-    const patch: Partial<DbDocument & { doc_number: number }> = {
-      doc_number: docNumber,
-      source_path: file.name,
-      source: "sync",
-      version: "v1",
-    };
-
-    if (kind === "ai") patch.has_ai = true;
-    if (kind === "master") patch.has_master = true;
-
-    if (!existing) {
-      patch.title = "(Synkronisert)";
-      inserts.push(patch);
-    } else {
-      const needsUpdate =
-        (kind === "ai" && !existing.has_ai) || (kind === "master" && !existing.has_master);
-      if (needsUpdate) updates.push({ ...patch });
-    }
-  }
-
-  if (inserts.length > 0) {
-    const { error: insertError } = await supabase.from("documents").upsert(inserts);
-    if (insertError) throw insertError;
-  }
-
-  if (updates.length > 0) {
-    for (const update of updates) {
-      await supabase
-        .from("documents")
-        .update(update)
-        .eq("doc_number", update.doc_number)
-        .select();
-    }
-  }
-}
 /**
  * Synkroniser databasen med faktiske filer i storage
  * Sletter ikke rader, men oppdaterer has_ai / has_master etter hva som faktisk finnes
