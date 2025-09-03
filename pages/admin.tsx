@@ -11,6 +11,7 @@ import {
   type DocGroup,
 } from "../utils/docs";
 import { uploadAndFlag } from "../utils/upload";
+import { setTitleForKind } from "../utils/docs";
 
 /* -------------------------------
    AdminPage
@@ -123,11 +124,22 @@ export default function AdminPage() {
       // 2) Last opp valgt(e) fil(er) → sørger for å skrive
       //    is_master/source_path/sha256 + flagg i DB (i serverkode)
       if (aiFile) {
-        await uploadAndFlag({ file: aiFile, docNumber: selectedDocId, kind: "ai" });
-      }
-      if (masterFile) {
-        await uploadAndFlag({ file: masterFile, docNumber: selectedDocId, kind: "master" });
-      }
+  await uploadAndFlag({ file: aiFile, docNumber: selectedDocId, kind: "ai" });
+  await setTitleForKind({
+    docNumber: selectedDocId,
+    isMaster: false,
+    title: aiFile.name.replace(/\.[^/.]+$/, ""), // filnavn uten endelse
+  });
+}
+if (masterFile) {
+  await uploadAndFlag({ file: masterFile, docNumber: selectedDocId, kind: "master" });
+  await setTitleForKind({
+    docNumber: selectedDocId,
+    isMaster: true,
+    title: masterFile.name.replace(/\.[^/.]+$/, ""),
+  });
+}
+
 
       // 3) Rydd opp UI + refetch liste fra DB
       setAiFile(null);
