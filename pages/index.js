@@ -33,8 +33,19 @@ export default function Dashboard() {
         borderRadius: "8px",
         boxShadow: "0 2px 8px rgba(0,0,0,0.05)"
       }}>
-        <h2>🔗 Chatbot-lenker</h2>
+        <h2>🔗 Tilganger</h2>
         <ul style={{ listStyle: "none", padding: 0, marginTop: "1rem" }}>
+          <li style={{ marginBottom: "0.5rem" }}>
+            <Link href="/admin">
+              <a style={{
+                color: "#6b21a8",
+                textDecoration: "underline",
+                fontSize: "1.1rem"
+              }}>
+                🛠 Gå til Adminside
+              </a>
+            </Link>
+          </li>
           <li>
             <Link href="/chat-nullfilter">
               <a style={{
