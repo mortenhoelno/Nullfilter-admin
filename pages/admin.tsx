@@ -9,8 +9,11 @@ import {
   type DbDocument,
   type DocGroup,
   setTitleForKind,
-  syncMissingFiles, // ✅ MANGLET INNRYKK
+  syncMissingFiles, // ✅
 } from "../utils/docs";
+
+import { uploadAndFlag } from "../utils/upload"; // ✅ LEGG TIL DENNE
+
 
 export default function AdminPage() {
   const [title, setTitle] = useState("");
