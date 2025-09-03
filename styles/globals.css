@@ -1,0 +1,8 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Tillegg for chattestil: */
+html, body {
+  @apply bg-gray-50 text-gray-800;
+}
