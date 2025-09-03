@@ -1,7 +1,8 @@
-import { supabase } from "./supabase";
-import { supabaseBrowser } from "./supabaseClient";
+// utils/docs.ts
+import { supabase } from "./supabase";              // din eksisterende server-klient
+import { supabaseBrowser } from "./supabaseClient"; // nettleser-klient (ANON) for lesing
 
-/** DB-modell for documents-tabellen (Supabase-skjemaet vårt) */
+/** DB-modell for documents-tabellen (tilpass ved behov) */
 export type DbDocument = {
   id: string;               // uuid
   title: string;
@@ -13,12 +14,12 @@ export type DbDocument = {
   is_master?: boolean | null;
   source_path?: string | null;
   sha256?: string | null;
-  created_at?: string;
+  created_at?: string | null;
 };
 
 /**
- * Opprett eller oppdater dokument (metadata).
- * Dette er din eksisterende funksjon – beholdt som den var.
+ * Opprett/oppdater dokument-metadata (DIN EKSISTERENDE FUNKSJON)
+ * NB: Upsert'er på doc_number slik du hadde det.
  */
 export async function upsertDocument({
   docNumber,
@@ -58,7 +59,7 @@ export async function upsertDocument({
 }
 
 /**
- * Hent alle dokumenter fra databasen
+ * Hent alle dokumenter fra DB for visning i admin (nettleser/ANON)
  */
 export async function listDocuments(): Promise<DbDocument[]> {
   const sb = supabaseBrowser();
@@ -66,14 +67,15 @@ export async function listDocuments(): Promise<DbDocument[]> {
     .from("documents")
     .select("*")
     .order("doc_number", { ascending: true })
-    .order("is_master", { ascending: false })
+    .order("is_master", { ascending: false })   // vis master først for samme doc_number
     .order("created_at", { ascending: false });
+
   if (error) throw error;
   return (data ?? []) as DbDocument[];
 }
 
 /**
- * Gruppér dokumenter pr. doc_number slik at Master/AI havner sammen
+ * Gruppér dokumenter pr. doc_number slik at Master/AI vises side-by-side
  */
 export type DocGroup = {
   docNumber: number;
