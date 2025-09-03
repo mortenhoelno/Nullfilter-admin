@@ -93,3 +93,39 @@ export function groupByDocNumber(rows: DbDocument[]): DocGroup[] {
   }
   return Array.from(map.values()).sort((a, b) => a.docNumber - b.docNumber);
 }
+// utils/docs.ts (legg til nederst i fila)
+
+/**
+ * Sett/oppdater tittel for et dokumentnummer + type (AI/Master).
+ * Brukes for å lagre filnavn (uten endelse) som tittel når vi laster opp.
+ * onConflict på (doc_number, is_master) sikrer riktig rad.
+ */
+export async function setTitleForKind(params: {
+  docNumber: number;
+  isMaster: boolean;
+  title: string;
+}) {
+  const { docNumber, isMaster, title } = params;
+
+  // Importeres dynamisk for å unngå sirkulær import i noen oppsett
+  const { supabase } = await import("./supabase");
+
+  const { data, error } = await supabase
+    .from("documents")
+    .upsert(
+      [
+        {
+          doc_number: docNumber,
+          is_master: isMaster,
+          title,
+          source: "admin", // valgfritt – hyggelig å ha
+        },
+      ],
+      { onConflict: "doc_number,is_master" }
+    )
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data as DbDocument;
+}
