@@ -17,6 +17,14 @@ export default function AdminPage() {
   const [title, setTitle] = useState("");
 const [category, setCategory] = useState("");
 const [theme, setTheme] = useState("");
+  const [existingTitles, setExistingTitles] = useState<string[]>([]);
+const [existingCategories, setExistingCategories] = useState<string[]>([]);
+const [existingThemes, setExistingThemes] = useState<string[]>([]);
+
+const [customTitle, setCustomTitle] = useState("");
+const [customCategory, setCustomCategory] = useState("");
+const [customTheme, setCustomTheme] = useState("");
+
 
   const [selectedDocId, setSelectedDocId] = useState<number | null>(null);
   const [aiFile, setAiFile] = useState<File | null>(null);
