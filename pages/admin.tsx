@@ -14,6 +14,10 @@ syncMissingFiles,
 import { uploadAndFlag } from "../utils/upload";
 
 export default function AdminPage() {
+  const [title, setTitle] = useState("");
+const [category, setCategory] = useState("");
+const [theme, setTheme] = useState("");
+
   const [selectedDocId, setSelectedDocId] = useState<number | null>(null);
   const [aiFile, setAiFile] = useState<File | null>(null);
   const [masterFile, setMasterFile] = useState<File | null>(null);
@@ -194,23 +198,64 @@ export default function AdminPage() {
 
       <p style={{ marginTop: 16 }}>Velg dokumentnummer og last opp AI- og/eller Master-dokument.</p>
 
-      <label>
-        <strong>1. Dokumentnummer:</strong>
-        <br />
-        <select
-          onChange={(e) => setSelectedDocId(e.target.value ? parseInt(e.target.value, 10) : null)}
-          value={selectedDocId ?? ""}
-        >
-          <option value="" disabled>
-            Velg dokument…
+      <div style={{ display: "flex", gap: 20, margin: "20px 0", flexWrap: "wrap", alignItems: "flex-end" }}>
+  <div>
+    <label>
+      <strong>1. Dokumentnummer:</strong><br />
+      <select
+        onChange={(e) => setSelectedDocId(e.target.value ? parseInt(e.target.value, 10) : null)}
+        value={selectedDocId ?? ""}
+      >
+        <option value="" disabled>Velg dokument…</option>
+        {docCatalog.map((doc) => (
+          <option key={doc.id} value={doc.id}>
+            #{doc.id} – {doc.title}
           </option>
-          {docCatalog.map((doc) => (
-            <option key={doc.id} value={doc.id}>
-              #{doc.id} – {doc.title}
-            </option>
-          ))}
-        </select>
-      </label>
+        ))}
+      </select>
+    </label>
+  </div>
+
+  <div>
+    <label>
+      <strong>Tittel:</strong><br />
+      <input
+        type="text"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        placeholder="F.eks. Veiledning: Stress"
+        style={{ width: 250 }}
+      />
+    </label>
+  </div>
+
+  <div>
+    <label>
+      <strong>Kategori:</strong><br />
+      <input
+        type="text"
+        value={category}
+        onChange={(e) => setCategory(e.target.value)}
+        placeholder="F.eks. Prosess"
+        style={{ width: 150 }}
+      />
+    </label>
+  </div>
+
+  <div>
+    <label>
+      <strong>Tema:</strong><br />
+      <input
+        type="text"
+        value={theme}
+        onChange={(e) => setTheme(e.target.value)}
+        placeholder="F.eks. Stress og nervesystem"
+        style={{ width: 200 }}
+      />
+    </label>
+  </div>
+</div>
+
 
       <div style={{ margin: "20px 0" }}>
         <label>
