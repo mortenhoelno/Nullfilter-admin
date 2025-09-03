@@ -112,10 +112,55 @@ export async function setTitleForKind(params: {
     .from("documents")
     .update(patch)
     .eq("doc_number", docNumber)
-    .eq(isMaster ? "has_master" : "has_ai", true) // viktig for å treffe riktig rad
+    .eq(isMaster ? "has_master" : "has_ai", true)
     .select()
     .single();
 
   if (error) throw error;
   return data as DbDocument;
+}
+
+/**
+ * Synkroniser dokumenter i databasen med faktisk filstatus i Supabase Storage
+ */
+export async function syncMissingFiles(): Promise<void> {
+  const { data: allDocs, error: docError } = await supabase.from("documents").select("*");
+  if (docError) throw docError;
+
+  const { data: aiFiles, error: aiErr } = await supabase.storage.from("ai").list("", { limit: 1000 });
+  const { data: masterFiles, error: masterErr } = await supabase.storage.from("master").list("", { limit: 1000 });
+
+  if (aiErr || masterErr) throw aiErr || masterErr;
+
+  const aiSet = new Set(aiFiles?.map(f => f.name));
+  const masterSet = new Set(masterFiles?.map(f => f.name));
+
+  for (const doc of allDocs ?? []) {
+    let shouldUpdate = false;
+    const updates: Partial<DbDocument> = {};
+
+    if (doc.has_ai && doc.source_path?.startsWith("ai/")) {
+      const filename = doc.source_path.replace("ai/", "");
+      if (!aiSet.has(filename)) {
+        updates.has_ai = false;
+        updates.source_path = null;
+        updates.sha256 = null;
+        shouldUpdate = true;
+      }
+    }
+
+    if (doc.has_master && doc.source_path?.startsWith("master/")) {
+      const filename = doc.source_path.replace("master/", "");
+      if (!masterSet.has(filename)) {
+        updates.has_master = false;
+        updates.source_path = null;
+        updates.sha256 = null;
+        shouldUpdate = true;
+      }
+    }
+
+    if (shouldUpdate) {
+      await supabase.from("documents").update(updates).eq("id", doc.id);
+    }
+  }
 }
