@@ -121,66 +121,66 @@ export async function setTitleForKind(params: {
 }
 
 /**
- * Nullstill all metadata hvis filene slettes fra storage
+ * Synkroniser databasen med faktiske filer i storage
  */
-export async function clearDocumentMetadata(docNumber: number, kind: "ai" | "master") {
-  const patch: Partial<DbDocument> = {
-    source_path: null,
-    sha256: null,
-    created_at: null,
-    title: "(Ledig)",
-    source: "admin",
-  };
-
-  if (kind === "ai") patch.has_ai = false;
-  if (kind === "master") patch.has_master = false;
-
-  const { data, error } = await supabase
-    .from("documents")
-    .update(patch)
-    .eq("doc_number", docNumber)
-    .eq(kind === "ai" ? "has_ai" : "has_master", true)
-    .select()
-    .single();
-
+export async function syncMissingFiles() {
+  const { data: allDocs, error } = await supabase.from("documents").select("*");
   if (error) throw error;
-  return data as DbDocument;
-}
-/**
- * Tøm metadata hvis fil mangler i Supabase Storage
- */
-export async function syncMissingFiles(): Promise<void> {
-  const { data: docs, error } = await supabase
+
+  const existingMap = new Map<number, DbDocument>();
+  for (const d of allDocs ?? []) {
+    existingMap.set(d.doc_number, d);
+  }
+
+  const { data: storageFiles, error: storageError } = await supabase.storage
     .from("documents")
-    .select("id, doc_number, has_ai, has_master, source_path");
+    .list("", { limit: 200 });
 
-  if (error) throw error;
-  if (!docs || docs.length === 0) return;
+  if (storageError) throw storageError;
 
-  const updates = [];
+  const updates: Partial<DbDocument & { doc_number: number }>[] = [];
+  const inserts: Partial<DbDocument & { doc_number: number }>[] = [];
 
-  for (const doc of docs) {
-    const path = doc.source_path;
-    if (!path) continue;
+  for (const file of storageFiles ?? []) {
+    const match = file.name.match(/^(\d+)-(master|ai)\./);
+    if (!match) continue;
 
-    const { data: file, error: fileError } = await supabase.storage
-      .from("documents")
-      .list(path.split("/").slice(0, -1).join("/"), { search: path.split("/").pop() });
+    const docNumber = parseInt(match[1], 10);
+    const kind = match[2] as "ai" | "master";
+    const existing = existingMap.get(docNumber);
 
-    const fileExists = file && file.length > 0;
-    if (!fileExists) {
-      updates.push({
-        id: doc.id,
-        doc_number: doc.doc_number,
-        ...(doc.has_ai ? { has_ai: false } : {}),
-        ...(doc.has_master ? { has_master: false } : {}),
-        source_path: null,
-        sha256: null,
-      });
+    const patch: Partial<DbDocument & { doc_number: number }> = {
+      doc_number: docNumber,
+      source_path: file.name,
+      source: "sync",
+      version: "v1",
+    };
+
+    if (kind === "ai") patch.has_ai = true;
+    if (kind === "master") patch.has_master = true;
+
+    if (!existing) {
+      patch.title = "(Synkronisert)";
+      inserts.push(patch);
+    } else {
+      const needsUpdate =
+        (kind === "ai" && !existing.has_ai) || (kind === "master" && !existing.has_master);
+      if (needsUpdate) updates.push({ ...patch });
     }
   }
 
-  for (const patch of updates) {
-    await supabase.from("documents").update(patch).eq("id", patch.id);
+  if (inserts.length > 0) {
+    const { error: insertError } = await supabase.from("documents").upsert(inserts);
+    if (insertError) throw insertError;
+  }
+
+  if (updates.length > 0) {
+    for (const update of updates) {
+      await supabase
+        .from("documents")
+        .update(update)
+        .eq("doc_number", update.doc_number)
+        .select();
+    }
   }
 }
