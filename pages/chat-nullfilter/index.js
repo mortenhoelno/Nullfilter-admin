@@ -1,10 +1,13 @@
-// FERDIG VERSJON: pages/chat-nullfilter/index.js med ChatEngine
+// FERDIG VERSJON: pages/chat-nullfilter/index.js med personaConfig
 
 import { useState, useEffect } from "react";
 import { createConversation, saveMessage } from "../../utils/storage";
 import ChatEngine from "../../components/ChatEngine";
+import personaConfig from "../../config/personaConfig";
 /** @typedef {import('../../types').Message} Message */
 /** @typedef {import('../../types').Conversation} Conversation */
+
+const config = personaConfig.nullfilter;
 
 export default function NullFilterChat() {
   const [useMemory, setUseMemory] = useState(false);
@@ -13,7 +16,7 @@ export default function NullFilterChat() {
   const [chatInput, setChatInput] = useState("");
   const [conversation, setConversation] = useState(null);
   const [messages, setMessages] = useState([
-    { role: "assistant", content: "Hei! Jeg er Null Filter. Hva vil du prate om i dag?" },
+    { role: "assistant", content: config.intro },
   ]);
 
   useEffect(() => {
@@ -23,18 +26,10 @@ export default function NullFilterChat() {
     }
   }, [useMemory, email]);
 
-  const starterMessages = [
-    "Jeg orker ikke være sosial",
-    "Ingenting virker",
-    "Ingen bryr seg om meg",
-    "Hvordan gå ned i vekt og bli der",
-    "Hvorfor er jeg alltid sliten og umotivert",
-  ];
-
   const appendBotPlaceholder = () => {
     const reply = {
       role: "assistant",
-      content: "(Jeg tenker høyt sammen med deg – dette byttes ut senere med faktisk svar)",
+      content: "(Jeg er her – konkret tips kommer snart!)",
     };
     setMessages((prev) => [...prev, reply]);
     if (conversation) saveMessage(conversation.id, reply);
@@ -63,27 +58,23 @@ export default function NullFilterChat() {
         {/* Avatar + intro */}
         <div className="flex justify-center">
           <img
-            src="/avatar-nullfilter.png"
-            alt="Digital Morten"
+            src={config.avatar}
+            alt={config.name}
             className="w-32 h-32 rounded-full border border-gray-300 shadow"
           />
         </div>
 
         <div className="text-center">
-          <h1 className="text-3xl font-bold">🧠 Digital Morten – Null Filter</h1>
-          <p className="mt-2 text-gray-600">
-            Jeg er her for deg – når som helst. En digital versjon av meg (Morten)
-            som svarer så nært jeg kan som den ekte meg ville gjort.
-          </p>
+          <h1 className="text-3xl font-bold">{config.name}</h1>
+          <p className="mt-2 text-gray-600">{config.description}</p>
         </div>
 
-        {/* Disclaimer */}
-        <div className="bg-yellow-100 border border-yellow-300 text-yellow-800 p-4 rounded-md text-sm">
-          <p>
-            ❗ Dette er ikke medisinsk hjelp eller akutt krisehjelp. Hvis du er i fare eller har selvmordstanker,
-            kontakt legevakt på 116 117 eller ring 113.
-          </p>
-        </div>
+        {/* Disclaimer hvis satt */}
+        {config.disclaimer && (
+          <div className="bg-yellow-100 border border-yellow-300 text-yellow-800 p-4 rounded-md text-sm">
+            <p>{config.disclaimer}</p>
+          </div>
+        )}
 
         {/* Brukertypevalg */}
         <div className="space-y-2">
@@ -123,7 +114,7 @@ export default function NullFilterChat() {
         <div className="space-y-2">
           <p className="font-medium">Hva vil du snakke om? Trykk på en boble:</p>
           <div className="flex flex-wrap gap-2">
-            {starterMessages.map((msg, idx) => (
+            {config.starters.map((msg, idx) => (
               <button
                 key={idx}
                 onClick={() => handleStarterClick(msg)}
@@ -141,7 +132,7 @@ export default function NullFilterChat() {
           input={chatInput}
           setInput={setChatInput}
           onSend={sendMessage}
-          themeColor="blue"
+          themeColor={config.themeColor}
         />
       </div>
     </div>
