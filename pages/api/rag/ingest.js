@@ -1,6 +1,6 @@
-// ferdig versjon
+// FERDIG VERSJON — bruker simpleChunk fra chunker.js
 import { getSupabaseServer } from "../../../utils/supabaseServer";
-import { chunkText } from "../../../utils/chunker";
+import { simpleChunk } from "../../../utils/chunker";
 import { embedBatch } from "../../../utils/embeddings";
 
 export const config = { api: { bodyParser: { sizeLimit: "10mb" } } };
@@ -20,7 +20,12 @@ export default async function handler(req, res) {
     if (!sourceText && bucket && path) {
       const supabase = getSupabaseServer();
       const { data, error } = await supabase.storage.from(bucket).download(path);
-      if (error) return res.status(400).json({ error: "download failed", details: error.message });
+      if (error) {
+        return res.status(400).json({
+          error: "download failed",
+          details: error.message
+        });
+      }
       // OBS: vi støtter kun tekstbaserte filer her
       sourceText = await data.text();
     }
@@ -29,7 +34,8 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "No text provided (or empty file)" });
     }
 
-    const chunks = chunkText(sourceText, chunkOptions);
+    // ✅ Bruker simpleChunk fra utils/chunker
+    const chunks = simpleChunk(sourceText, chunkOptions);
     const embeddings = await embedBatch(chunks);
 
     const supabase = getSupabaseServer();
@@ -55,6 +61,8 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, chunks: rows.length });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ error: String(err.message || err) });
+    return res
+      .status(500)
+      .json({ error: String(err.message || err) });
   }
 }
