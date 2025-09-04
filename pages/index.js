@@ -1,4 +1,4 @@
-// pages/index.js
+// pages/index.js — FERDIG OPPDATERT
 import { useEffect, useRef, useState } from "react";
 
 export default function Home() {
@@ -16,9 +16,14 @@ export default function Home() {
   const [lastRate, setLastRate] = useState(0); // rows per second (smoothed)
   const stopFlag = useRef(false);
 
-  // === NY: Chat/RAG-statistikk ===
+  // === Chat/RAG-statistikk (eksisterende) ===
   const [chatStats, setChatStats] = useState(null);
   const [chatStatsErr, setChatStatsErr] = useState("");
+
+  // === NY: RAG snapshot fra /api/rag/status ===
+  const [ragStatus, setRagStatus] = useState(null);
+  const [ragLoading, setRagLoading] = useState(false);
+  const [ragErr, setRagErr] = useState("");
 
   // === NY: API POST-test (erstatter <a>-lenker som ga 405) ===
   const [apiTest, setApiTest] = useState({
@@ -120,7 +125,7 @@ export default function Home() {
     stopFlag.current = true;
   }
 
-  // === NY: Hent Chat/RAG-statistikk ===
+  // === Hent Chat/RAG-statistikk (eksisterende) ===
   async function fetchChatStats() {
     try {
       const res = await fetch("/api/chat-stats");
@@ -132,9 +137,28 @@ export default function Home() {
     }
   }
 
+  // === NY: Hent RAG snapshot ===
+  async function fetchRagStatus() {
+    try {
+      setRagLoading(true);
+      setRagErr("");
+      const res = await fetch("/api/rag/status");
+      const json = await res.json();
+      if (!res.ok || json.ok === false) {
+        throw new Error(json?.error || `HTTP ${res.status}`);
+      }
+      setRagStatus(json);
+    } catch (e) {
+      setRagErr(String(e?.message || e));
+    } finally {
+      setRagLoading(false);
+    }
+  }
+
   useEffect(() => {
     fetchStats();       // embeddings status
-    fetchChatStats();   // chat/RAG status
+    fetchChatStats();   // chat/RAG status (aggregater)
+    fetchRagStatus();   // RAG snapshot (total/ai/master/unique)
   }, []);
 
   // === NY: POST-testfunksjon for API-knapper ===
@@ -188,7 +212,7 @@ export default function Home() {
             href="/admin"
             className="mt-1 inline-flex items-center px-4 py-2 rounded-xl bg-purple-600 text-white hover:bg-purple-500"
           >
-            🧰 Gå til Admin
+            🗂️ Dokumentoversikt
           </a>
         </header>
 
@@ -242,7 +266,47 @@ export default function Home() {
           )}
         </section>
 
-        {/* 📊 NY: Chat/RAG-statistikk */}
+        {/* 📚 NY: RAG snapshot fra /api/rag/status */}
+        <section className="bg-white rounded-2xl shadow p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold">📚 RAG – snapshot</h2>
+            <button
+              onClick={fetchRagStatus}
+              className="px-3 py-2 rounded-xl bg-gray-200 hover:bg-gray-300 text-sm"
+            >
+              Oppdater
+            </button>
+          </div>
+
+          {ragLoading && <div className="text-gray-500">Henter RAG-status…</div>}
+          {ragErr && <div className="p-3 bg-rose-50 border border-rose-200 rounded text-rose-700">Feil: {ragErr}</div>}
+
+          {ragStatus?.ok && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="p-4 bg-gray-50 border rounded-2xl">
+                <div className="text-sm text-gray-500">Totalt antall chunks</div>
+                <div className="text-3xl font-bold">{ragStatus.total_chunks}</div>
+              </div>
+              <div className="p-4 bg-gray-50 border rounded-2xl">
+                <div className="text-sm text-gray-500">AI-chunks</div>
+                <div className="text-3xl font-bold">{ragStatus.ai_chunks}</div>
+              </div>
+              <div className="p-4 bg-gray-50 border rounded-2xl">
+                <div className="text-sm text-gray-500">Master-chunks</div>
+                <div className="text-3xl font-bold">{ragStatus.master_chunks}</div>
+              </div>
+              <div className="p-4 bg-gray-50 border rounded-2xl">
+                <div className="text-sm text-gray-500">Unike dokumenter</div>
+                <div className="text-lg font-semibold">
+                  AI: {ragStatus.unique_docs?.ai ?? 0} · Master: {ragStatus.unique_docs?.master ?? 0}
+                </div>
+                <div className="text-sm text-gray-500">Sum: {ragStatus.unique_docs?.total ?? 0}</div>
+              </div>
+            </div>
+          )}
+        </section>
+
+        {/* 📊 Chat/RAG-statistikk (eksisterende) */}
         <section className="bg-white rounded-2xl shadow p-5">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-lg font-semibold">📊 Chat/RAG-statistikk</h2>
