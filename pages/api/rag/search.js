@@ -1,4 +1,4 @@
-// pages/api/rag/search.js
+// pages/api/rag/search.js — FERDIG VERSJON (peker på rag_chunks)
 import { OpenAI } from "openai";
 
 /** ─────────── helpers: headers / CORS / methods ─────────── */
@@ -20,54 +20,44 @@ async function getSupabase() {
   return supabase;
 }
 
-/** ─────────── OpenAI client ─────────── */
+/** ─────────── OpenAI client (kun brukt hvis vi vil gjøre embedding-søk senere) ─────────── */
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-/** ─────────── core search using supabase rpc match_chunks ─────────── */
-async function searchSupabase(query, { topK = 6, minSim = 0.2 } = {}) {
+/** ─────────── core search using Supabase RPC match_rag_chunks (pgvector) ───────────
+ * Forventer at du har funksjonen `public.match_rag_chunks` i Supabase (se SQL lenger ned).
+ * Hvis den mangler, faller vi automatisk tilbake til enkel tekstsøk (ILIKE) i rag_chunks.
+ */
+async function vectorSearchWithRPC(query, { topK = 6, minSim = 0.2, sourceType = null } = {}) {
   const sb = await getSupabase();
-  if (!sb) {
-    return {
-      ok: false,
-      reason: "Supabase mangler (sett SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY).",
-      matches: [],
-      counts: { ai: 0, master: 0, total: 0 },
-      meta: { source: "stub" },
-    };
-  }
+  if (!sb || !process.env.OPENAI_API_KEY) return { ok: false, reason: "rpc-unavailable" };
 
-  // 1) lag embedding
+  // Lag embedding av spørsmålet
   const emb = await openai.embeddings.create({
     model: "text-embedding-3-small",
-    input: query,
+    input: query
   });
-  const vector = emb?.data?.[0]?.embedding;
-  if (!Array.isArray(vector)) {
-    throw new Error("Embedding mislyktes.");
-  }
+  const query_embedding = emb?.data?.[0]?.embedding;
+  if (!Array.isArray(query_embedding)) return { ok: false, reason: "embedding-missing" };
 
-  // 2) kall rpc
-  const { data, error } = await sb.rpc("match_chunks", {
-    embedding: vector,
+  const { data, error } = await sb.rpc("match_rag_chunks", {
+    query_embedding,
+    match_threshold: minSim,
     match_count: topK,
-    min_cosine_sim: minSim,
+    wanted_source_type: sourceType // null, "ai" eller "master"
   });
 
   if (error) {
-    return {
-      ok: false,
-      reason: `Supabase RPC 'match_chunks' feilet: ${error.message}`,
-      matches: [],
-      counts: { ai: 0, master: 0, total: 0 },
-      meta: { source: "supabase" },
-    };
+    return { ok: false, reason: `rpc-error: ${error.message}` };
   }
 
   const matches = (data || []).map((row) => ({
-    doc_id: row.doc_id ?? null,
-    source_type: (row.source_type || "").toLowerCase(),
-    similarity: typeof row.similarity === "number" ? row.similarity : null,
-    content: row.content || row.text || row.chunk || "",
+    id: row.id,
+    doc_id: row.doc_id,
+    source_type: row.source_type,
+    source_path: row.source_path,
+    chunk_index: row.chunk_index,
+    similarity: row.similarity,
+    content: row.content
   }));
 
   let ai = 0, master = 0;
@@ -80,48 +70,90 @@ async function searchSupabase(query, { topK = 6, minSim = 0.2 } = {}) {
     ok: true,
     matches,
     counts: { ai, master, total: matches.length },
-    meta: { source: "supabase", topK, minSim },
+    meta: { source: "rpc" }
+  };
+}
+
+/** ─────────── fallback: enkel tekstsøk i rag_chunks (ILIKE) ─────────── */
+async function textSearchFallback(q, { topK = 6, sourceType = null } = {}) {
+  const sb = await getSupabase();
+  if (!sb) {
+    return {
+      ok: false,
+      reason: "Supabase mangler (sett SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY).",
+      matches: [],
+      counts: { ai: 0, master: 0, total: 0 },
+      meta: { source: "stub" },
+    };
+  }
+
+  let query = sb
+    .from("rag_chunks")
+    .select("id, doc_id, source_type, source_path, chunk_index, content")
+    .ilike("content", `%${q}%`)
+    .limit(topK);
+
+  if (sourceType) query = query.eq("source_type", sourceType);
+
+  const { data, error } = await query;
+  if (error) {
+    return {
+      ok: false,
+      reason: `Supabase query feilet: ${error.message}`,
+      matches: [],
+      counts: { ai: 0, master: 0, total: 0 },
+      meta: { source: "supabase" },
+    };
+  }
+
+  const matches = (data || []).map((row) => ({
+    id: row.id,
+    doc_id: row.doc_id,
+    source_type: (row.source_type || "").toLowerCase(),
+    source_path: row.source_path || null,
+    chunk_index: row.chunk_index ?? null,
+    similarity: null,
+    content: row.content || "",
+  }));
+
+  let ai = 0, master = 0;
+  for (const m of matches) {
+    if (m.source_type === "ai") ai++;
+    else if (m.source_type === "master") master++;
+  }
+
+  return {
+    ok: true,
+    matches,
+    counts: { ai, master, total: matches.length },
+    meta: { source: "ilike" },
   };
 }
 
 /** ─────────── handler ─────────── */
 export default async function handler(req, res) {
-  allow(res);
-
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
-  }
-
   try {
-    // Støtt GET ?q=… for rask testing og POST { q, topK, minSim }
-    let q = "";
-    let topK = 6;
-    let minSim = 0.2;
-
-    if (req.method === "GET") {
-      q = String(req.query.q || "").trim();
-      if (req.query.topK) topK = Math.max(1, Number(req.query.topK) || 6);
-      if (req.query.minSim) minSim = Math.max(0, Math.min(1, Number(req.query.minSim) || 0.2));
-    } else if (req.method === "POST") {
-      const body = req.body || {};
-      q = String(body.q || body.query || "").trim();
-      if (body.topK) topK = Math.max(1, Number(body.topK) || 6);
-      if (body.minSim) minSim = Math.max(0, Math.min(1, Number(body.minSim) || 0.2));
-    } else {
-      return res.status(405).json({ error: "Only POST, GET, OPTIONS allowed at /api/rag/search" });
+    allow(res);
+    if (req.method === "OPTIONS") return res.status(200).end();
+    if (req.method !== "GET") {
+      return res.status(405).json({ error: "Only GET allowed" });
     }
 
-    if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({ error: "OPENAI_API_KEY mangler i miljøvariabler." });
-    }
+    const q = (req.query?.q || "").toString();
+    const topK = Math.max(1, Math.min(50, parseInt(req.query?.topK || "6", 10)));
+    const minSim = Math.max(0, Math.min(0.99, Number(req.query?.minSim ?? 0.2)));
+    const sourceType = req.query?.sourceType ? String(req.query.sourceType).toLowerCase() : null; // "ai" | "master" | null
 
     if (!q) {
       return res.status(400).json({ error: "Mangler søkestreng 'q'." });
     }
 
-    const out = await searchSupabase(q, { topK, minSim });
-    // out.ok kan være false hvis supabase mangler eller rpc feiler — returner 200 med forklaring
-    return res.status(200).json(out);
+    // Prøv vektor-RPC først, fall tilbake til ILIKE hvis ikke mulig
+    const vec = await vectorSearchWithRPC(q, { topK, minSim, sourceType });
+    if (vec.ok) return res.status(200).json(vec);
+
+    const txt = await textSearchFallback(q, { topK, sourceType });
+    return res.status(200).json(txt);
   } catch (err) {
     console.error("[/api/rag/search] error:", err);
     return res.status(500).json({ error: String(err?.message || err) });
