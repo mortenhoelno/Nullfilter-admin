@@ -7,11 +7,17 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Only POST allowed" });
   }
   try {
-    // Bare bevis på at ruta svarer
-    const now = new Date().toISOString();
-    const body = req.body ?? {};
-    return res.status(200).json({ ok: true, pong: now, echoCount: Array.isArray(body.rows) ? body.rows.length : 0 });
+    const need = {
+      SUPABASE_URL: process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL,
+      SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+      OPENAI_API_KEY: process.env.OPENAI_API_KEY
+    };
+    const missing = Object.entries(need).filter(([,v]) => !v).map(([k]) => k);
+    if (missing.length) {
+      return res.status(500).json({ ok:false, error:`Mangler env: ${missing.join(", ")}` });
+    }
+    return res.status(200).json({ ok:true, envOk:true });
   } catch (e) {
-    return res.status(500).json({ ok: false, error: String(e?.message || e) });
+    return res.status(500).json({ ok:false, error:String(e?.message||e) });
   }
 }
