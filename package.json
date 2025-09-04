@@ -8,6 +8,7 @@
     "start": "next start"
   },
   "dependencies": {
+    "@langchain/openai": "^0.6.11",
     "@supabase/supabase-js": "^2.45.3",
     "next": "^15.5.2",
     "openai": "^5.19.1",
