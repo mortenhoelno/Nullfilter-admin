@@ -1,6 +1,4 @@
-// pages/api/rag/status.js — FERDIG VERSJON
-// Enkelt status-endepunkt for RAG: teller fra public.rag_chunks
-
+// pages/api/rag/status.js — RETTET (bruker select med aggregat, ingen .group())
 import { getSupabaseServer } from "../../../utils/supabaseServer";
 
 export default async function handler(_req, res) {
@@ -13,14 +11,14 @@ export default async function handler(_req, res) {
       .select("id", { count: "exact", head: true });
     if (e1) throw e1;
 
-    // Fordeling per source_type (ai/master)
+    // Fordeling per source_type (ai/master) — bruk aggregat i select
     const { data: perType, error: e2 } = await supabase
       .from("rag_chunks")
       .select("source_type, count:id")
-      .group("source_type");
+      .order("source_type", { ascending: true });
     if (e2) throw e2;
 
-    // Unike dokumenter (ai/master)
+    // Unike dokumenter per type
     const { data: docs, error: e3 } = await supabase
       .from("rag_chunks")
       .select("doc_id, source_type")
