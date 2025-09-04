@@ -20,6 +20,13 @@ export default function Dashboard() {
     setResponseText(data.reply || "Ingen svar mottatt 😕");
   }
 
+  async function runChunkSync() {
+    const resp = await fetch("/api/chunk-sync");
+    const data = await resp.json();
+    alert(`✅ Ferdig: ${data.successCount} dokumenter chunket.\n❌ Feil: ${data.failedCount}`);
+    console.log("Detaljer:", data);
+  }
+
   return (
     <main style={{
       padding: "2rem",
@@ -40,7 +47,7 @@ export default function Dashboard() {
         <ul>
           <li>🟢 Next.js 15.5 kjører</li>
           <li>🧠 Klar for AI-integrasjon</li>
-          <li>🗂 Supabase ikke tilkoblet ennå</li>
+          <li>🗂 Supabase tilkoblet</li>
         </ul>
       </section>
 
@@ -100,6 +107,21 @@ export default function Dashboard() {
               🔍 Test /api/chat nå
             </button>
           </li>
+          <li style={{ marginTop: "1rem" }}>
+            <button
+              onClick={runChunkSync}
+              style={{
+                padding: "0.5rem 1rem",
+                backgroundColor: "#1d4ed8",
+                color: "white",
+                border: "none",
+                borderRadius: "6px",
+                cursor: "pointer"
+              }}
+            >
+              🚀 Kjør chunking av dokumenter
+            </button>
+          </li>
         </ul>
 
         {/* 👇 Viser AI-svaret rett under knappen */}
@@ -119,25 +141,3 @@ export default function Dashboard() {
     </main>
   );
 }
-
-{/* Kjør chunk-sync manuelt */}
-<button
-  onClick={async () => {
-    const resp = await fetch("/api/chunk-sync");
-    const data = await resp.json();
-    alert(`✅ Ferdig: ${data.successCount} dokumenter chunket.\n❌ Feil: ${data.failedCount}`);
-    console.log("Detaljer:", data);
-  }}
-  style={{
-    marginTop: "2rem",
-    padding: "0.8rem 1.2rem",
-    background: "#1d4ed8",
-    color: "white",
-    border: "none",
-    borderRadius: "8px",
-    cursor: "pointer",
-    fontSize: "1rem"
-  }}
->
-  🚀 Kjør chunking av dokumenter
-</button>
