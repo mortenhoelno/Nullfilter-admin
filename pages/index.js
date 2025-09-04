@@ -1,13 +1,27 @@
 // pages/index.js
-// Forside med hurtigknapper, chunk-sync og embed backfill (alt på ett sted)
-
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export default function Home() {
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState("new");
-  const [limit, setLimit] = useState(200);
+  const [limit, setLimit] = useState(500);
   const [log, setLog] = useState(null);
+
+  // Backfill progress state
+  const [stats, setStats] = useState({ total: 0, missing: 0 });
+  const [autoRunning, setAutoRunning] = useState(false);
+  const [processedSoFar, setProcessedSoFar] = useState(0);
+  const [startedAt, setStartedAt] = useState(null);
+  const [lastRate, setLastRate] = useState(0); // rows per second (smoothed)
+  const stopFlag = useRef(false);
+
+  function fmtSeconds(s) {
+    if (!isFinite(s) || s < 0) return "—";
+    const sec = Math.ceil(s);
+    const m = Math.floor(sec / 60);
+    const r = sec % 60;
+    return `${m}:${r.toString().padStart(2, "0")}`;
+  }
 
   async function safeJson(res) {
     const ct = res.headers.get("content-type") || "";
@@ -33,19 +47,75 @@ export default function Home() {
     }
   }
 
-  async function runBackfill() {
-    setLoading(true);
-    setLog(null);
-    try {
-      const r = await fetch(`/api/embed-backfill?limit=${encodeURIComponent(String(limit))}`);
-      const j = await safeJson(r);
-      setLog(j);
-    } catch (e) {
-      setLog({ ok: false, error: String(e) });
-    } finally {
-      setLoading(false);
+  async function runBackfillOnce(batch = limit) {
+    const t0 = performance.now();
+    const r = await fetch(`/api/embed-backfill?limit=${encodeURIComponent(String(batch))}`);
+    const j = await safeJson(r);
+    const t1 = performance.now();
+    const dt = Math.max((t1 - t0) / 1000, 0.001); // s
+    if (j && j.ok) {
+      const rows = Number(j.updated || 0);
+      const rate = rows / dt; // rows per sec
+      // Enkel glatting: 70% forrige + 30% ny
+      setLastRate(prev => (prev ? prev * 0.7 + rate * 0.3 : rate));
+      return rows;
     }
+    // Feil - vis i logg og stopp
+    setLog(j);
+    return -1;
   }
+
+  async function fetchStats() {
+    const r = await fetch("/api/embed-stats");
+    const j = await safeJson(r);
+    if (j && j.ok) {
+      setStats({ total: j.total, missing: j.missing });
+      return j;
+    } else {
+      setLog(j);
+    }
+    return null;
+  }
+
+  async function startAutoBackfill() {
+    setAutoRunning(true);
+    setProcessedSoFar(0);
+    setLastRate(0);
+    stopFlag.current = false;
+    setStartedAt(Date.now());
+
+    const s = await fetchStats();
+    if (!s) {
+      setAutoRunning(false);
+      return;
+    }
+
+    let remaining = s.missing;
+    while (!stopFlag.current && remaining > 0) {
+      const updated = await runBackfillOnce(limit);
+      if (updated < 0) break; // error
+      setProcessedSoFar(prev => prev + updated);
+      remaining -= updated;
+      setStats(prev => ({ ...prev, missing: Math.max(remaining, 0) }));
+      if (updated === 0) break; // ingenting mer å backfille
+    }
+
+    setAutoRunning(false);
+  }
+
+  function stopAuto() {
+    stopFlag.current = true;
+  }
+
+  useEffect(() => {
+    fetchStats();
+  }, []);
+
+  // ETA-beregning
+  const remaining = stats.missing;
+  const rate = lastRate; // rows/sec
+  const etaSec = rate > 0 ? remaining / rate : Infinity;
+  const elapsedSec = startedAt ? (Date.now() - startedAt) / 1000 : 0;
 
   return (
     <main className="min-h-screen bg-gray-50 p-6">
@@ -53,7 +123,7 @@ export default function Home() {
         <header>
           <h1 className="text-3xl font-bold">Adminpanel</h1>
           <p className="text-gray-600">
-            Hurtigtilganger, chunking og test av chat. Nå med leselig skrift og litt glans ✨
+            Hurtigtilganger, chunking og embeddings. Nå med bever-ETA 🦫⏱️
           </p>
         </header>
 
@@ -108,27 +178,89 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Embed backfill */}
+        {/* Embeddings – auto backfill med fremdrift */}
         <section className="bg-white rounded-2xl shadow p-5">
-          <h2 className="text-lg font-semibold mb-3">🧠 Embeddings</h2>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <label className="text-sm">
-              Backfill limit:
-              <input
-                type="number"
-                min={1}
-                value={limit}
-                onChange={(e) => setLimit(Number(e.target.value))}
-                className="ml-2 border rounded-lg px-3 py-2 w-28"
+          <h2 className="text-lg font-semibold mb-3">🧠 Embeddings – Backfill med fremdrift</h2>
+
+          {/* Status/Progress */}
+          <div className="grid sm:grid-cols-4 gap-4 text-sm">
+            <div className="p-3 rounded-xl bg-gray-100">
+              <div className="text-gray-500">Total chunks</div>
+              <div className="text-xl font-semibold">{stats.total}</div>
+            </div>
+            <div className="p-3 rounded-xl bg-gray-100">
+              <div className="text-gray-500">Mangler embedding</div>
+              <div className="text-xl font-semibold">{stats.missing}</div>
+            </div>
+            <div className="p-3 rounded-xl bg-gray-100">
+              <div className="text-gray-500">Hastighet</div>
+              <div className="text-xl font-semibold">{rate ? `${rate.toFixed(1)} r/s` : "—"}</div>
+            </div>
+            <div className="p-3 rounded-xl bg-gray-100">
+              <div className="text-gray-500">ETA</div>
+              <div className="text-xl font-semibold">{fmtSeconds(etaSec)}</div>
+              <div className="text-xs text-gray-500">Elapset: {fmtSeconds(elapsedSec)}</div>
+            </div>
+          </div>
+
+          {/* Progress bar */}
+          <div className="mt-3">
+            <div className="h-3 w-full bg-gray-200 rounded-full overflow-hidden">
+              <div
+                className="h-3 bg-indigo-500"
+                style={{
+                  width:
+                    stats.total > 0
+                      ? `${Math.min(100, ((stats.total - stats.missing) / stats.total) * 100).toFixed(1)}%`
+                      : "0%",
+                }}
               />
-            </label>
-            <button
-              onClick={runBackfill}
-              disabled={loading}
-              className="px-4 py-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-40"
-            >
-              {loading ? "Backfiller…" : "Embed backfill"}
-            </button>
+            </div>
+            <div className="mt-1 text-xs text-gray-600">
+              {stats.total - stats.missing} / {stats.total} ferdig
+            </div>
+          </div>
+
+          {/* Kontroller */}
+          <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <label className="text-sm">
+                Batch-størrelse:
+                <input
+                  type="number"
+                  min={1}
+                  value={limit}
+                  onChange={(e) => setLimit(Number(e.target.value))}
+                  className="ml-2 border rounded-lg px-3 py-2 w-28"
+                />
+              </label>
+              <button
+                onClick={async () => {
+                  const j = await fetchStats();
+                  if (!j) return;
+                }}
+                className="px-3 py-2 rounded-xl bg-gray-200 hover:bg-gray-300 text-sm"
+              >
+                Oppdater status
+              </button>
+            </div>
+            <div className="flex items-center gap-3">
+              {!autoRunning ? (
+                <button
+                  onClick={startAutoBackfill}
+                  className="px-4 py-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-500"
+                >
+                  Start auto-backfill
+                </button>
+              ) : (
+                <button
+                  onClick={stopAuto}
+                  className="px-4 py-2 rounded-xl bg-rose-600 text-white hover:bg-rose-500"
+                >
+                  Stopp
+                </button>
+              )}
+            </div>
           </div>
         </section>
       </div>
