@@ -1,8 +1,9 @@
-// pages/api/chunk-sync.js
-
-import { loadAndChunkFromFileSystem } from "../../utils/chunker";
-import { createClient } from "@supabase/supabase-js";
+// Fil: pages/api/chunk-sync.js
+import fs from "fs/promises";
+import path from "path";
+import { chunkText } from "@/utils/chunker";
 import { OpenAIEmbeddings } from "@langchain/openai";
+import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -10,55 +11,91 @@ const supabase = createClient(
 );
 
 const embeddings = new OpenAIEmbeddings({
-  openAIApiKey: process.env.OPENAI_API_KEY
+  modelName: "text-embedding-3-small",
+  dimensions: 1536
 });
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Only POST allowed" });
-  }
-
-  const { docId } = req.body;
-  if (!docId) {
-    return res.status(400).json({ error: "docId mangler" });
-  }
-
   try {
-    const chunks = await loadAndChunkFromFileSystem(docId);
+    const baseDir = "public/docs";
+    const folders = await fs.readdir(path.join(baseDir, "ai"));
+    const docIds = folders.map(f => parseInt(f)).filter(n => !isNaN(n));
 
-    if (!chunks.length) {
-      return res.status(404).json({ error: "Ingen chunks funnet" });
+    const toInsert = [];
+    const failed = [];
+
+    for (const docId of docIds) {
+      for (const sourceType of ["ai", "master"]) {
+        const docPath = path.join(baseDir, sourceType, String(docId));
+        let files;
+
+        try {
+          files = await fs.readdir(docPath);
+        } catch (err) {
+          console.warn(`🚫 Fant ikke katalog for ${sourceType}/${docId}`);
+          continue;
+        }
+
+        for (const file of files) {
+          const fullPath = path.join(docPath, file);
+          const ext = path.extname(file).toLowerCase();
+          if (![".txt", ".md"].includes(ext)) continue;
+
+          try {
+            const raw = await fs.readFile(fullPath, "utf-8");
+            const chunks = chunkText(raw);
+            const title = file.replace(ext, "");
+
+            const embedded = await embeddings.embedDocuments(chunks);
+
+            for (let i = 0; i < chunks.length; i++) {
+              toInsert.push({
+                doc_id: docId,
+                title,
+                source_type: sourceType,
+                chunk_index: i,
+                content: chunks[i],
+                token_count: Math.ceil(chunks[i].length / 4),
+                embedding: embedded[i],
+                created_at: new Date().toISOString()
+              });
+            }
+
+            console.log(`✅ Chunket ${chunks.length} biter fra ${sourceType}/${docId}/${file}`);
+          } catch (err) {
+            console.error(`❌ Feil under chunking ${sourceType}/${docId}/${file}`, err);
+            failed.push({ doc_id: docId, source_type, file, error: err.message });
+          }
+        }
+      }
     }
 
-    // Slett gamle chunks for denne docId før vi lagrer nye
-    await supabase
-      .from("rag_chunks")
-      .delete()
-      .eq("doc_id", docId);
-
-    // Lag embeddings og last opp i bolker
-    const batchSize = 10;
-    for (let i = 0; i < chunks.length; i += batchSize) {
-      const batch = chunks.slice(i, i + batchSize);
-      const texts = batch.map(c => c.content);
-      const vectors = await embeddings.embedDocuments(texts);
-
-      const toInsert = batch.map((c, j) => ({
-        doc_id: c.doc_id,
-        chunk_index: c.chunk_index,
-        content: c.content,
-        token_count: c.token_count,
-        source_type: c.source_type,
-        filename: c.filename,
-        embedding: vectors[j]
-      }));
-
-      await supabase.from("rag_chunks").insert(toInsert);
+    if (toInsert.length > 0) {
+      const { error } = await supabase.from("rag_chunks").insert(toInsert);
+      if (error) throw error;
     }
 
-    return res.status(200).json({ status: "ok", chunks: chunks.length });
+    return res.status(200).json({
+      successCount: toInsert.length,
+      failedCount: failed.length,
+      details: {
+        success: toInsert.map(c => ({
+          doc_id: c.doc_id,
+          source_type: c.source_type,
+          chunk_index: c.chunk_index
+        })),
+        failed
+      }
+    });
   } catch (err) {
     console.error("Feil under chunking:", err);
-    return res.status(500).json({ error: "Intern feil under chunking" });
+    return res.status(500).json({
+      successCount: 0,
+      failedCount: 1,
+      details: {
+        success: [],
+        failed: [{ error: err.message }]
+      }
+    });
   }
 }
