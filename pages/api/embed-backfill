@@ -1,5 +1,5 @@
 // pages/api/embed-backfill.js
-// FERDIG VERSJON: Fyller embedding for eksisterende rader der embedding IS NULL, i batches.
+// Fyller embedding for rader i rag_chunks der embedding IS NULL
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -38,19 +38,23 @@ async function embedText(input) {
 export default async function handler(req, res) {
   try {
     if (req.method !== 'POST' && req.method !== 'GET') {
-      return res.status(405).json({ error: 'Method not allowed' });
+      return res.status(405).json({ ok: false, error: 'Method not allowed' });
     }
     if (!OPENAI_API_KEY) {
-      return res.status(400).json({ error: 'OPENAI_API_KEY mangler' });
+      return res.status(400).json({ ok: false, error: 'OPENAI_API_KEY mangler' });
     }
 
     const supabase = serviceClient();
-    const q = req.method === 'GET' ? req.query : req.body || {};
+    const q = req.method === 'GET' ? req.query : (req.body || {});
     const limit = Number(q.limit || BATCH);
     const filter_doc_id = q.filter_doc_id ? Number(q.filter_doc_id) : null;
     const filter_source_type = q.filter_source_type || null;
 
-    let db = supabase.from(TABLE).select('id, content').is('embedding', null).limit(limit);
+    let db = supabase.from(TABLE)
+      .select('id, content')
+      .is('embedding', null)
+      .limit(limit);
+
     if (filter_doc_id) db = db.eq('doc_id', filter_doc_id);
     if (filter_source_type) db = db.eq('source_type', filter_source_type);
 
