@@ -1,7 +1,7 @@
 // Fil: pages/api/chunk-sync.js
 import fs from "fs/promises";
 import path from "path";
-import { chunkText } from "@/utils/chunker";
+import { chunkText } from "../../utils/chunker";
 import { OpenAIEmbeddings } from "@langchain/openai";
 import { createClient } from "@supabase/supabase-js";
 
