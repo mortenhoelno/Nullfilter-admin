@@ -1,5 +1,5 @@
 // components/ChatEngine.js — FERDIG VERSJON
-// Meldingsmotor med meldingsliste, input og ventemeldinger ("typing bubbles")
+// Meldingsmotor med ventemeldinger (lys, fade-in, typing, stor melding-pool)
 
 import { useRef, useEffect, useState } from "react";
 
@@ -9,7 +9,7 @@ import { useRef, useEffect, useState } from "react";
  * @param {string} props.input
  * @param {function} props.setInput
  * @param {function} props.onSend
- * @param {boolean} [props.loading] - settes true når API-kall pågår
+ * @param {boolean} [props.loading] - true når API-kall pågår
  * @param {string} [props.themeColor] - f.eks. "blue" eller "green"
  */
 export default function ChatEngine({
@@ -22,15 +22,17 @@ export default function ChatEngine({
 }) {
   const listRef = useRef(null);
   const [waitingMessage, setWaitingMessage] = useState(null);
+  const [displayedText, setDisplayedText] = useState(""); // typing-effekt
 
   useEffect(() => {
     if (listRef.current) {
       listRef.current.scrollTop = listRef.current.scrollHeight;
     }
-  }, [messages, waitingMessage]);
+  }, [messages, waitingMessage, displayedText]);
 
-  // Ventemeldinger (10 originale + 50 varme/omsorgsfulle)
+  // === Hele samlingen med ventemeldinger (160+) ===
   const waitMessages = [
+    // 10 originale
     "Jeg samler de beste innsiktene for deg... ⏳",
     "Jobber med å finne det perfekte svaret 🔍",
     "Analyserer all tilgjengelig kunnskap for deg...",
@@ -41,6 +43,8 @@ export default function ChatEngine({
     "Tenker grundig for å gi deg mest verdi 🧠",
     "Kobler sammen innsikter for ditt unike behov...",
     "Utarbeider et gjennomtenkt svar til deg ⚡",
+
+    // 50 varme og omsorgsfulle
     "Tar meg ekstra tid fordi du fortjener det beste 💝",
     "Vil gi deg noe som virkelig betyr noe for deg...",
     "Bryr meg om at svaret skal hjelpe deg videre 🤗",
@@ -91,15 +95,129 @@ export default function ChatEngine({
     "Tar meg tid fordi kvalitet er min måte å vise omsorg",
     "Ønsker at du skal kjenne deg sett, hørt og hjulpet",
     "Jobber med hele hjertet for å gjøre en forskjell for deg 💕",
+
+    // 50 ekstra omsorg og inspirasjon
+    "Bryr meg så mye om deg - har du husket å være snill med deg selv i dag? 💖",
+    "Jobber for deg akkurat nå... forresten, du er sterkere enn du tror ✨",
+    "Vil gi deg det beste - du fortjener all verdens godhet 🌟",
+    "Tar meg tid for deg... husk at du er verdifull akkurat som du er",
+    "Setter sammen kunnskap med kjærlighet... har du smilt til deg selv i speilet i dag? 😊",
+    "Bryr meg dypt om ditt velvære - ikke glem å puste dypt innimellom 🌸",
+    "Jobber med varme for deg... du gjør det bedre enn du tror, vet du det? 💛",
+    "Vil at du skal ha det bra - har du drukket nok vann i dag? 💧",
+    "Behandler deg med all den omsorgen du fortjener - vær stolt av deg selv ✨",
+    "Tar meg ekstra tid fordi jeg bryr meg... du er på rett vei, fortsett! 🌈",
+    "Jobber hjertelig for deg - husk at progress er progress, uansett hvor lite 💪",
+    "Vil gi deg det fineste... har du gitt deg selv en klem i dag? 🤗",
+    "Bryr meg genuint - du håndterer livet så bra som du kan akkurat nå 💕",
+    "Setter sammen svar med omsorg... du er modigere enn du aner 🦋",
+    "Tar meg tid fordi du betyr noe... ikke sammenlign deg med andre i dag ✨",
+    "Jobber med kjærlighet for deg... har du sagt noe pent til deg selv? 💝",
+    "Vil at du skal stråle - du gjør en forskjell bare ved å være deg 🌟",
+    "Bryr meg så inderlig... husk å feire de små seirene også 🎉",
+    "Behandler deg som gull... du er akkurat der du skal være akkurat nå ✨",
+    "Jobber omsorgsfullt - har du takket deg selv for alt du gjør? 🙏",
+    "Vil gi deg det aller beste... du er mer elsket enn du vet 💖",
+    "Tar meg tid med glede... husk at du ikke trenger å være perfekt 🌸",
+    "Bryr meg så mye... har du lagt merke til noe vakkert i dag? 🌺",
+    "Jobber hjertevarm for deg... du er god nok akkurat som du er 💚",
+    "Setter pris på deg mens jeg jobber... gi deg selv kreditt for alt du mestrer ✨",
+    "Vil at du skal føle deg elsket... du gjør ditt beste, og det er nok 💕",
+    "Jobber med ekte omsorg... har du vært tålmodig med deg selv i dag? 🌼",
+    "Bryr meg dypt om deg... husk at feil er bare læring i forkledning 📚",
+    "Tar meg tid fordi du er spesiell... du har kommet så langt allerede! 🌟",
+    "Vil gi deg varme gjennom ord... har du tatt deg tid til å hvile? 😌",
+    "Jobber kjærlig for deg... du inspirerer meg bare ved å være deg ✨",
+    "Bryr meg av hele hjertet... husk å være tålmodig med prosessen din 🌱",
+    "Setter sammen svar med mye kjærlighet... du er sterkere enn dine utfordringer 💪",
+    "Vil at du skal kjenne deg verdsatt... har du gjort noe hyggelig for deg selv? 💝",
+    "Jobber omtenksomt... du har lov til å være stolt av deg selv 🌟",
+    "Tar meg tid fordi jeg ser deg... ikke glem at du betyr noe for andre 💕",
+    "Bryr meg så sterkt om ditt ve og vel... du fortjener all godhet i verden ✨",
+    "Vil gi deg solskinns-energi... har du smilt til noen i dag? 😊",
+    "Jobber med hele sjelen for deg... du er på en vakker reise, selv når det er vanskelig 🦋",
+    "Bryr meg mest av alt... du er et lite mirakel som går rundt på jorden 💫",
+    "Setter sammen visdom for deg... husk at du vokser selv når det ikke føles sånn 🌱",
+    "Vil varme hjertet ditt... har du sagt 'takk' til kroppen din i dag? 🙏",
+    "Jobber med evig tålmodighet... du trenger ikke fikse alt på en gang ✨",
+    "Bryr meg uendelig mye... husk at du er akkurat passe som du er 💖",
+    "Tar meg all tid i verden for deg... du lyser opp verden bare ved å eksistere 🌟",
+    "Vil gi deg all min omsorg... har du vært din egen beste venn i dag? 🤗",
+    "Jobber med åpent hjerte for deg... du er tillatt å være menneskelig og ufullkommen 💕",
+    "Bryr meg mer enn ord kan uttrykke... ikke glem hvor langt du har kommet! 🌈",
+    "Setter sammen kjærlighet i ord... du har alt du trenger inni deg allerede ✨",
+    "Vil omfavne deg gjennom skjermen... du er verdifull uansett hva du presterer 💝",
+
+    // 50 morsomme digitale uhell
+    "Ups, mistet bøkene på gulvet - samler opp alle svarene dine! 📚😅",
+    "Rydder i de siste nuller og enere... hvor ble eineren av? 🔢",
+    "Beklager, måtte organisere det digitale biblioteket mitt litt 📖💻",
+    "Søker i arkivet... noen har rotet til alfabetet igjen! 🔤",
+    "Ett øyeblikk - huskebanken min trengte en restart 🧠💭",
+    "Plukker opp alle databitene jeg klarte å miste... 🤦‍♀️",
+    "Sorterer tankene mine - de lå spredt utover hele harddisken! 💾",
+    "Finner fram riktig hylle i det mentale biblioteket... 📚🔍",
+    "Beklager forsinkelsen, måtte slå opp i indeksen min igjen 📋",
+    "Rydder i hjernecellene - noen hadde blitt litt rotete! 🧹",
+    "Ett sekund, mappen 'Kloke Svar' hadde havnet under 'Dagdrømmer' 📁😴",
+    "Må bare finne riktig nøkkel til kunnskapsskapet... 🗝️",
+    "Beklager, tankene mine hadde gått på pause-knappen ⏸️",
+    "Samler sammen alle spredte visdomsperler... 💎",
+    "Måtte restarte den interne søkemotoren min 🔄",
+    "Ett øyeblikk - informasjonen min hadde gått og gjemt seg! 🙈",
+    "Rydder i det digitale rotet... hvem putter logikk under 'Tilfeldigheter'? 🤷‍♀️",
+    "Plukker sammen alle de løse trådene til ett svar 🧶",
+    "Beklager, måtte fisker etter det perfekte ordet i ordbanken 🎣",
+    "Reorganiserer synapsene - de hadde blitt litt sammenfiltret! ⚡",
+    "Ett sekund, faktaene mine spilte gjemsel... fant dem! 👻",
+    "Måtte slå av og på kreativitetsmodulen min 💡🔄",
+    "Samler inn alle de spredte tankesmulene... 🍞",
+    "Beklager, hukommelsen min hadde åpnet for mange faner 🖥️",
+    "Rydder i den mentale skuffeskapet - alt lå i feil skuff! 🗄️",
+    "Måtte kalibrere visdomskompasset mitt på nytt 🧭",
+    "Ett øyeblikk - ordene mine hadde løpt fra hverandre! 🏃‍♂️💨",
+    "Plukker opp alle ideene som falt av hyllen... 💭📚",
+    "Beklager, tankeprosessen min tok en kaffekopp ☕",
+    "Sorterer gjennom det mentale arkivet - hvem flyttet på alt? 📦",
+    "Samler sammen bitene til puslespillet ditt 🧩",
+    "Ett sekund, logikken min hadde tatt feil sving! 🛤️",
+    "Rydder i idébankens 'Div Annet'-mappe... 💼",
+    "Måtte starte opp den gamle klokskapsmaskineri på nytt ⚙️",
+    "Beklager, hukommelsen min hadde gått i dvale 😴",
+    "Plukker sammen alle de gode intensjonene... 🌟",
+    "Ett øyeblikk - ordforrådet mitt trengte en oppfriskning 📖",
+    "Samler inn spredte tankeflak fra hele nevronettet 🕸️",
+    "Rydder i det mentale skrivebordet - alt lå i en haug! 📝",
+    "Måtte defragmentere hjernedisken min litt... 💽",
+    "Ett sekund, svarene mine hadde gått på overtime ⏰",
+    "Fisker etter de beste bitene i kunnskapshavet 🌊🐠",
+    "Beklager, måtte blåse støv av noen gamle visdomsbøker 📚💨",
+    "Samler sammen alle de kloke tankene som rullet under sofaen 🛋️",
+    "Rydder i den digitale vesla... så mye rart som samler seg! 🎒",
+    "Ett øyeblikk - måtte untangle tankeknutene mine 🪢",
+    "Sorterer i 'Tilfeldige Fakta'-skuffen... den var full! 🗃️",
+    "Plukker opp alle ordene som falt ut av setningene 📝",
+    "Beklager, kreativiteten min hadde tatt seg en liten pause 🎨",
+    "Samler sammen alle puzzle-bitene til ditt perfekte svar! 🧩✨",
   ];
 
+  // Når loading starter → velg tilfeldig melding og start typing
   useEffect(() => {
     if (loading) {
-      // trekk tilfeldig melding når vi starter "tenkingen"
       const msg = waitMessages[Math.floor(Math.random() * waitMessages.length)];
       setWaitingMessage(msg);
+      setDisplayedText("");
+      let words = msg.split(" ");
+      let i = 0;
+      const interval = setInterval(() => {
+        i++;
+        setDisplayedText(words.slice(0, i).join(" "));
+        if (i >= words.length) clearInterval(interval);
+      }, 250); // 1 ord hvert 250ms
+      return () => clearInterval(interval);
     } else {
       setWaitingMessage(null);
+      setDisplayedText("");
     }
   }, [loading]);
 
@@ -125,7 +243,12 @@ export default function ChatEngine({
         className="mt-6 bg-white border rounded-md p-4 shadow-sm max-h-[60vh] overflow-y-auto space-y-3"
       >
         {messages.map((m, i) => (
-          <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+          <div
+            key={i}
+            className={`flex ${
+              m.role === "user" ? "justify-end" : "justify-start"
+            }`}
+          >
             <div
               className={`px-3 py-2 rounded-2xl text-sm shadow max-w-[85%] whitespace-pre-wrap ${
                 m.role === "user" ? theme.user : "bg-gray-100"
@@ -136,11 +259,19 @@ export default function ChatEngine({
           </div>
         ))}
 
-        {/* Ventemelding når loading = true */}
+        {/* Ventemelding med fade-in + typing */}
         {waitingMessage && (
           <div className="flex justify-start">
-            <div className="px-3 py-2 rounded-2xl text-sm shadow bg-gray-100 max-w-[85%] whitespace-pre-wrap italic text-gray-600">
-              {waitingMessage}
+            <div
+              className={`
+                px-3 py-2 rounded-2xl text-sm italic text-gray-600
+                max-w-[85%] whitespace-pre-wrap
+                bg-gray-50 border border-gray-200 shadow-sm
+                opacity-0 animate-fadeIn
+              `}
+              style={{ animation: "fadeIn 0.8s ease-in forwards" }}
+            >
+              {displayedText}
             </div>
           </div>
         )}
@@ -164,6 +295,18 @@ export default function ChatEngine({
           Send
         </button>
       </div>
+
+      {/* CSS for fade-in animasjon */}
+      <style jsx>{`
+        @keyframes fadeIn {
+          from {
+            opacity: 0.1;
+          }
+          to {
+            opacity: 0.8;
+          }
+        }
+      `}</style>
     </>
   );
 }
