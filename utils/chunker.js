@@ -132,4 +132,27 @@ export async function ingestFileToRag({
     sha256: sha256OfString(content),
     embedding: embeddings[idx] ?? null
     // created_at: default (DB)
-    // updated_at: settes av_
+    // updated_at: settes av trigger (SQL nedenfor)
+  }));
+
+  const { error } = await sb
+    .from("rag_chunks")
+    .upsert(rows, { onConflict: "doc_id,source_type,source_path,chunk_index" });
+
+  if (error) throw new Error(`Supabase upsert feilet: ${error.message}`);
+
+  return { ok: true, chunks: rows.length, docId, sourceType, filePath };
+}
+
+/**
+ * Ingest flere filer på rappen.
+ */
+export async function ingestMany(files, options = {}) {
+  const out = [];
+  for (const f of files) {
+    // f: { filePath, docId, sourceType, title? }
+    const r = await ingestFileToRag({ ...f, ...options });
+    out.push(r);
+  }
+  return { ok: true, results: out };
+}
