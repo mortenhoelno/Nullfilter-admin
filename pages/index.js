@@ -20,6 +20,14 @@ export default function Home() {
   const [chatStats, setChatStats] = useState(null);
   const [chatStatsErr, setChatStatsErr] = useState("");
 
+  // === NY: API POST-test (erstatter <a>-lenker som ga 405) ===
+  const [apiTest, setApiTest] = useState({
+    path: "",
+    loading: false,
+    output: null,
+    error: ""
+  });
+
   function fmtSeconds(s) {
     if (!isFinite(s) || s < 0) return "—";
     const sec = Math.ceil(s);
@@ -129,6 +137,37 @@ export default function Home() {
     fetchChatStats();   // chat/RAG status
   }, []);
 
+  // === NY: POST-testfunksjon for API-knapper ===
+  async function runApiTest(path) {
+    setApiTest({ path, loading: true, output: null, error: "" });
+    try {
+      const res = await fetch(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [
+            { role: "system", content: "Du er en hjelpsom assistent." },
+            { role: "user", content: "Si hei på norsk." }
+          ]
+        })
+      });
+
+      const txt = await res.text();
+      try {
+        const json = JSON.parse(txt);
+        if (!res.ok) throw new Error(json?.error || `HTTP ${res.status}`);
+        setApiTest(prev => ({ ...prev, output: json }));
+      } catch {
+        // Ikke-JSON respons (f.eks. HTML ved serverfeil)
+        setApiTest(prev => ({ ...prev, output: txt }));
+      }
+    } catch (e) {
+      setApiTest(prev => ({ ...prev, error: String(e?.message || e) }));
+    } finally {
+      setApiTest(prev => ({ ...prev, loading: false }));
+    }
+  }
+
   // ETA-beregning
   const remaining = stats.missing;
   const rate = lastRate; // rows/sec
@@ -163,13 +202,44 @@ export default function Home() {
             <a href="/chat-keepertrening" className="px-4 py-2 rounded-xl bg-green-600 text-white hover:bg-green-500">
               👉 Keepertrening Chat
             </a>
-            <a href="/api/chat" className="px-4 py-2 rounded-xl bg-slate-900 text-white hover:opacity-90">
-              🔎 Test /api/chat (GET viser 405 – bruk POST fra UI/konsoll)
-            </a>
-            <a href="/api/rag/chat" className="px-4 py-2 rounded-xl bg-slate-900 text-white hover:opacity-90">
-              🔎 Test /api/rag/chat (GET viser 405 – bruk POST fra UI/konsoll)
-            </a>
+
+            {/* BYTTET fra <a> til POST-knapper */}
+            <button
+              onClick={() => runApiTest("/api/chat")}
+              className="px-4 py-2 rounded-xl bg-slate-900 text-white hover:opacity-90 disabled:opacity-60"
+              disabled={apiTest.loading}
+            >
+              {apiTest.loading && apiTest.path === "/api/chat" ? "Tester…" : "🔎 Test /api/chat (POST)"}
+            </button>
+
+            <button
+              onClick={() => runApiTest("/api/rag/chat")}
+              className="px-4 py-2 rounded-xl bg-slate-900 text-white hover:opacity-90 disabled:opacity-60"
+              disabled={apiTest.loading}
+            >
+              {apiTest.loading && apiTest.path === "/api/rag/chat" ? "Tester…" : "🔎 Test /api/rag/chat (POST)"}
+            </button>
           </div>
+
+          {/* Resultatvisning for API-test */}
+          {(apiTest.output || apiTest.error) && (
+            <div className="w-full mt-4">
+              <div className="text-sm font-medium mb-1">
+                Resultat for <span className="font-mono">{apiTest.path}</span>
+              </div>
+              {apiTest.error ? (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded text-rose-700 text-sm">
+                  Feil: {apiTest.error}
+                </div>
+              ) : (
+                <pre className="text-xs bg-black text-green-300 p-3 rounded-xl overflow-auto max-h-80">
+                  {typeof apiTest.output === "string"
+                    ? apiTest.output
+                    : JSON.stringify(apiTest.output, null, 2)}
+                </pre>
+              )}
+            </div>
+          )}
         </section>
 
         {/* 📊 NY: Chat/RAG-statistikk */}
