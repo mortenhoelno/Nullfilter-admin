@@ -1,157 +1,66 @@
+// pages/index.js — FERDIG VERSJON
 import { useState } from "react";
-import Link from "next/link";
 
-export default function Dashboard() {
-  const [responseText, setResponseText] = useState(null);
+export default function AdminIndex() {
+  const [busy, setBusy] = useState(false);
+  const [log, setLog] = useState(null);
+  const [mode, setMode] = useState("all"); // "all" | "new"
 
-  async function testChatApi() {
-    const resp = await fetch("/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        personaId: "nullfilter",
-        message: "Jeg føler meg helt overveldet og får ikke puste.",
-        history: []
-      })
-    });
-
-    const data = await resp.json();
-    setResponseText(data.reply || "Ingen svar mottatt 😕");
-  }
-
-  async function runChunkSync(force = false) {
-    const url = `/api/chunk-sync${force ? "?force=true" : ""}`;
-    const resp = await fetch(url);
-    const data = await resp.json();
-    alert(`✅ Ferdig: ${data.successCount} dokumenter chunket.\n❌ Feil: ${data.failedCount}`);
-    console.log("Detaljer:", data);
+  async function runChunk() {
+    try {
+      setBusy(true);
+      setLog(null);
+      const r = await fetch("/api/chunk-sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode, limit: 100 }),
+      });
+      const json = await r.json();
+      setLog(json);
+    } catch (e) {
+      setLog({ ok: false, error: String(e) });
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
-    <main style={{
-      padding: "2rem",
-      fontFamily: "Arial",
-      background: "#f9f9f9",
-      minHeight: "100vh"
-    }}>
-      <h1 style={{ fontSize: "2rem", marginBottom: "1rem" }}>Adminpanel</h1>
+    <div style={{ padding: 24, fontFamily: "system-ui, sans-serif" }}>
+      <h1>Adminpanel</h1>
+      <p>
+        <a href="/admin">Gå til dokumentopplasting</a>
+      </p>
 
-      <section style={{
-        background: "white",
-        padding: "1.5rem",
-        borderRadius: "8px",
-        boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
-        marginBottom: "2rem"
-      }}>
-        <h2>Status</h2>
-        <ul>
-          <li>🟢 Next.js 15.5 kjører</li>
-          <li>🧠 Klar for AI-integrasjon</li>
-          <li>🗂 Supabase tilkoblet</li>
-        </ul>
-      </section>
+      <div style={{ marginTop: 20, border: "1px solid #ddd", padding: 16, borderRadius: 8 }}>
+        <h2>Chunking</h2>
+        <label>
+          Mode:&nbsp;
+          <select value={mode} onChange={(e) => setMode(e.target.value)}>
+            <option value="all">all (prosesser alt)</option>
+            <option value="new">new (hopp over allerede chunket)</option>
+          </select>
+        </label>
+        <br />
+        <button disabled={busy} onClick={runChunk} style={{ marginTop: 10 }}>
+          {busy ? "Chunker…" : "Kjør chunk-sync"}
+        </button>
+      </div>
 
-      <section style={{
-        background: "white",
-        padding: "1.5rem",
-        borderRadius: "8px",
-        boxShadow: "0 2px 8px rgba(0,0,0,0.05)"
-      }}>
-        <h2>🔗 Tilganger</h2>
-        <ul style={{ listStyle: "none", padding: 0, marginTop: "1rem" }}>
-          <li style={{ marginBottom: "0.5rem" }}>
-            <Link href="/admin">
-              <a style={{
-                color: "#6b21a8",
-                textDecoration: "underline",
-                fontSize: "1.1rem"
-              }}>
-                🛠 Gå til Admin (dokumentopplasting)
-              </a>
-            </Link>
-          </li>
-          <li>
-            <Link href="/chat-nullfilter">
-              <a style={{
-                color: "#1d4ed8",
-                textDecoration: "underline",
-                fontSize: "1.1rem"
-              }}>
-                👉 Null Filter Chat
-              </a>
-            </Link>
-          </li>
-          <li style={{ marginTop: "0.5rem" }}>
-            <Link href="/chat-keepertrening">
-              <a style={{
-                color: "#16a34a",
-                textDecoration: "underline",
-                fontSize: "1.1rem"
-              }}>
-                👉 Keepertrening Chat
-              </a>
-            </Link>
-          </li>
-          <li style={{ marginTop: "1rem" }}>
-            <button
-              onClick={testChatApi}
-              style={{
-                padding: "0.5rem 1rem",
-                backgroundColor: "#0f172a",
-                color: "white",
-                border: "none",
-                borderRadius: "6px",
-                cursor: "pointer"
-              }}
-            >
-              🔍 Test /api/chat nå
-            </button>
-          </li>
-          <li style={{ marginTop: "1rem" }}>
-            <button
-              onClick={() => runChunkSync(false)}
-              style={{
-                padding: "0.5rem 1rem",
-                backgroundColor: "#1d4ed8",
-                color: "white",
-                border: "none",
-                borderRadius: "6px",
-                cursor: "pointer",
-                marginRight: "1rem"
-              }}
-            >
-              🚀 Kjør chunking av nye dokumenter
-            </button>
-            <button
-              onClick={() => runChunkSync(true)}
-              style={{
-                padding: "0.5rem 1rem",
-                backgroundColor: "#b91c1c",
-                color: "white",
-                border: "none",
-                borderRadius: "6px",
-                cursor: "pointer"
-              }}
-            >
-              ♻️ Tving chunking av alle
-            </button>
-          </li>
-        </ul>
-
-        {/* 👇 Viser AI-svaret rett under knappen */}
-        {responseText && (
-          <div style={{
-            marginTop: "1.5rem",
-            padding: "1rem",
-            backgroundColor: "#eef2ff",
-            borderLeft: "4px solid #4338ca",
-            borderRadius: "6px"
-          }}>
-            <strong>Svar fra AI:</strong>
-            <p style={{ marginTop: "0.5rem" }}>{responseText}</p>
-          </div>
-        )}
-      </section>
-    </main>
+      <div style={{ marginTop: 20 }}>
+        <h3>Resultat</h3>
+        <pre
+          style={{
+            background: "#111",
+            color: "#0f0",
+            padding: 12,
+            borderRadius: 8,
+            overflow: "auto",
+            maxHeight: 400,
+          }}
+        >
+{log ? JSON.stringify(log, null, 2) : "Ingen kjøring ennå."}
+        </pre>
+      </div>
+    </div>
   );
 }
