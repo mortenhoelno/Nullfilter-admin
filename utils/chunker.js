@@ -1,8 +1,5 @@
-// utils/chunker.js
-
 import fs from "fs/promises";
 import path from "path";
-import pdfParse from "pdf-parse";
 
 // 💡 Brukes til overlap
 function takeTailByTokens(text, tokens) {
@@ -12,10 +9,10 @@ function takeTailByTokens(text, tokens) {
 
 export function normalizeText(str) {
   return str
-    .replace(/\r\n/g, '\n')
-    .replace(/\t/g, '  ')
-    .replace(/[ \t]+\n/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
+    .replace(/\r\n/g, "\n")
+    .replace(/\t/g, "  ")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
 
@@ -23,28 +20,27 @@ function estimateTokens(str) {
   return Math.ceil(str.length / 4);
 }
 
-// ✂️ Selve chunkeren
 export function chunkText(
   rawText,
   {
     targetTokens = 800,
     overlapTokens = 120,
     hardMaxTokens = 1100,
-    normalize = true
+    normalize = true,
   } = {}
 ) {
   const text = normalize ? normalizeText(rawText) : rawText;
   if (!text || !text.trim()) return [];
 
-  const paragraphs = text.split(/\n{2,}/g).map(p => p.trim()).filter(Boolean);
+  const paragraphs = text.split(/\n{2,}/g).map((p) => p.trim()).filter(Boolean);
   const chunks = [];
-  let current = '';
+  let current = "";
   let currentTokens = 0;
 
   const flush = () => {
     if (!current.trim()) return;
     chunks.push(current.trim());
-    current = '';
+    current = "";
     currentTokens = 0;
   };
 
@@ -53,11 +49,11 @@ export function chunkText(
     if (currentTokens + pieceTokens > targetTokens) {
       const sentences = piece.split(/(?<=[.!?])\s+/).filter(Boolean);
       for (const s of sentences) {
-        const sTokens = estimateTokens(s + ' ');
+        const sTokens = estimateTokens(s + " ");
         if (currentTokens + sTokens > hardMaxTokens) {
           const words = s.split(/\s+/);
           for (const w of words) {
-            const wPlus = w + ' ';
+            const wPlus = w + " ";
             const wTokens = estimateTokens(wPlus);
             if (currentTokens + wTokens > hardMaxTokens) {
               flush();
@@ -67,17 +63,17 @@ export function chunkText(
           }
         } else if (currentTokens + sTokens > targetTokens) {
           flush();
-          current += s + ' ';
+          current += s + " ";
           currentTokens += sTokens;
         } else {
-          current += s + ' ';
+          current += s + " ";
           currentTokens += sTokens;
         }
       }
       return;
     }
 
-    current += piece + '\n\n';
+    current += piece + "\n\n";
     currentTokens += pieceTokens;
   };
 
@@ -95,7 +91,7 @@ export function chunkText(
       }
       const prev = chunks[i - 1];
       const tail = takeTailByTokens(prev, overlapTokens);
-      overlapped.push(tail + '\n' + chunks[i]);
+      overlapped.push(tail + "\n" + chunks[i]);
     }
     return overlapped;
   }
@@ -103,7 +99,9 @@ export function chunkText(
   return chunks;
 }
 
+//
 // 📂 Leser og chunker både ai/ og master/
+//
 export async function loadAndChunkFromFileSystem(docId, baseDir = "public/docs") {
   const chunks = [];
   const docFolders = ["ai", "master"];
@@ -129,6 +127,7 @@ export async function loadAndChunkFromFileSystem(docId, baseDir = "public/docs")
       try {
         if (ext === ".pdf") {
           const buffer = await fs.readFile(filePath);
+          const { default: pdfParse } = await import("pdf-parse");
           const data = await pdfParse(buffer);
           raw = data.text;
         } else {
@@ -147,7 +146,7 @@ export async function loadAndChunkFromFileSystem(docId, baseDir = "public/docs")
           content,
           token_count: Math.ceil(content.length / 4),
           source_type: sourceType,
-          filename
+          filename,
         });
       });
     }
