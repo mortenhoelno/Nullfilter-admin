@@ -9,6 +9,7 @@ function takeTailByTokens(text, tokens) {
   return text.slice(-approxChars);
 }
 
+// 🔃 Rydder opp i tekstformatet
 export function normalizeText(str) {
   return str
     .replace(/\r\n/g, '\n')
@@ -18,12 +19,12 @@ export function normalizeText(str) {
     .trim();
 }
 
-// 🔢 Estimat for tokens basert på tegn (grov tommelfingerregel)
+// 🔢 Estimerer antall tokens basert på tegn
 function estimateTokens(str) {
   return Math.ceil(str.length / 4);
 }
 
-// ✂️ Selve chunkeren – robust og fleksibel
+// ✂️ Selve chunkeren – kutter tekst i håndterbare biter
 export function chunkText(
   rawText,
   {
@@ -37,7 +38,6 @@ export function chunkText(
   if (!text || !text.trim()) return [];
 
   const paragraphs = text.split(/\n{2,}/g).map(p => p.trim()).filter(Boolean);
-
   const chunks = [];
   let current = '';
   let currentTokens = 0;
@@ -58,7 +58,7 @@ export function chunkText(
         if (currentTokens + sTokens > hardMaxTokens) {
           const words = s.split(/\s+/);
           for (const w of words) {
-            const wPlus = (w + ' ');
+            const wPlus = w + ' ';
             const wTokens = estimateTokens(wPlus);
             if (currentTokens + wTokens > hardMaxTokens) {
               flush();
@@ -85,6 +85,7 @@ export function chunkText(
   for (const para of paragraphs) {
     pushWithChecks(para);
   }
+
   flush();
 
   if (overlapTokens > 0 && chunks.length > 1) {
@@ -94,8 +95,7 @@ export function chunkText(
         overlapped.push(chunks[i]);
         continue;
       }
-      const prev = chunks[i - 1];
-      const tail = takeTailByTokens(prev, overlapTokens);
+      const tail = takeTailByTokens(chunks[i - 1], overlapTokens);
       overlapped.push(tail + '\n' + chunks[i]);
     }
     return overlapped;
@@ -104,13 +104,10 @@ export function chunkText(
   return chunks;
 }
 
-//
-// 📂 Hovedfunksjon: Leser og chunker både ai/ og master/
-//
+// 📂 Leser og chunker både ai/ og master/ filer for gitt docId
 export async function loadAndChunkFromFileSystem(docId, baseDir = "public/docs") {
   const chunks = [];
-
-  const docFolders = ["ai", "master"]; // begge versjoner
+  const docFolders = ["ai", "master"];
 
   for (const sourceType of docFolders) {
     const dirPath = path.join(baseDir, sourceType, String(docId));
@@ -128,16 +125,16 @@ export async function loadAndChunkFromFileSystem(docId, baseDir = "public/docs")
 
       const filePath = path.join(dirPath, filename);
       const raw = await fs.readFile(filePath, "utf-8");
-
       const chunkList = chunkText(raw);
+
       chunkList.forEach((content, i) => {
         chunks.push({
           doc_id: Number(docId),
           chunk_index: i,
           content,
           token_count: Math.ceil(content.length / 4),
-          source_type: sourceType, // ai eller master
-          filename,
+          source_type: sourceType,
+          filename
         });
       });
     }
