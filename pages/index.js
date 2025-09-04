@@ -3,6 +3,22 @@
 import Link from "next/link";
 
 export default function Dashboard() {
+  // 🧪 Testfunksjon for /api/chat
+  async function testChatApi() {
+    const resp = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        personaId: "nullfilter",
+        message: "Jeg føler meg helt overveldet og får ikke puste.",
+        history: []
+      })
+    });
+    const data = await resp.json();
+    console.log("🔍 Svar fra /api/chat:", data);
+    alert("Svar logget i konsollen ✅");
+  }
+
   return (
     <main style={{
       padding: "2rem",
@@ -67,6 +83,21 @@ export default function Dashboard() {
                 👉 Keepertrening Chat
               </a>
             </Link>
+          </li>
+          <li style={{ marginTop: "1rem" }}>
+            <button
+              onClick={testChatApi}
+              style={{
+                padding: "0.5rem 1rem",
+                backgroundColor: "#0f172a",
+                color: "white",
+                border: "none",
+                borderRadius: "6px",
+                cursor: "pointer"
+              }}
+            >
+              🔍 Test /api/chat nå
+            </button>
           </li>
         </ul>
       </section>
