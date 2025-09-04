@@ -119,3 +119,25 @@ export default function Dashboard() {
     </main>
   );
 }
+
+{/* Kjør chunk-sync manuelt */}
+<button
+  onClick={async () => {
+    const resp = await fetch("/api/chunk-sync");
+    const data = await resp.json();
+    alert(`✅ Ferdig: ${data.successCount} dokumenter chunket.\n❌ Feil: ${data.failedCount}`);
+    console.log("Detaljer:", data);
+  }}
+  style={{
+    marginTop: "2rem",
+    padding: "0.8rem 1.2rem",
+    background: "#1d4ed8",
+    color: "white",
+    border: "none",
+    borderRadius: "8px",
+    cursor: "pointer",
+    fontSize: "1rem"
+  }}
+>
+  🚀 Kjør chunking av dokumenter
+</button>
