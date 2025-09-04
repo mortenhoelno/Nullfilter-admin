@@ -16,13 +16,14 @@ const embeddings = new OpenAIEmbeddings({
 });
 
 export default async function handler(req, res) {
+  const { force = false } = req.query;
+  const baseDir = "public/docs";
+  const toInsert = [];
+  const failed = [];
+
   try {
-    const baseDir = "public/docs";
     const folders = await fs.readdir(path.join(baseDir, "ai"));
     const docIds = folders.map(f => parseInt(f)).filter(n => !isNaN(n));
-
-    const toInsert = [];
-    const failed = [];
 
     for (const docId of docIds) {
       for (const sourceType of ["ai", "master"]) {
@@ -31,21 +32,36 @@ export default async function handler(req, res) {
 
         try {
           files = await fs.readdir(docPath);
-        } catch (err) {
+        } catch {
           console.warn(`🚫 Fant ikke katalog for ${sourceType}/${docId}`);
           continue;
         }
 
         for (const file of files) {
-          const fullPath = path.join(docPath, file);
           const ext = path.extname(file).toLowerCase();
           if (![".txt", ".md"].includes(ext)) continue;
 
+          const title = file.replace(ext, "");
+
+          if (!force) {
+            // Sjekk om dette dokumentet + sourceType + title er allerede chunket
+            const { data, error } = await supabase
+              .from("rag_chunks")
+              .select("id")
+              .eq("doc_id", docId)
+              .eq("source_type", sourceType)
+              .eq("title", title)
+              .limit(1);
+            if (data?.length) {
+              console.log(`⏩ Hopper over ${sourceType}/${docId}/${file} – allerede chunket`);
+              continue;
+            }
+          }
+
           try {
+            const fullPath = path.join(docPath, file);
             const raw = await fs.readFile(fullPath, "utf-8");
             const chunks = chunkText(raw);
-            const title = file.replace(ext, "");
-
             const embedded = await embeddings.embedDocuments(chunks);
 
             for (let i = 0; i < chunks.length; i++) {
