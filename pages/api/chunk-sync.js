@@ -1,7 +1,5 @@
 // Fil: pages/api/chunk-sync.js
-import fs from "fs/promises";
-import path from "path";
-import { chunkText } from "../../utils/chunker";
+import { loadAndChunkFromFileSystem } from "../../utils/chunker";
 import { OpenAIEmbeddings } from "@langchain/openai";
 import { createClient } from "@supabase/supabase-js";
 
@@ -12,76 +10,67 @@ const supabase = createClient(
 
 const embeddings = new OpenAIEmbeddings({
   modelName: "text-embedding-3-small",
-  dimensions: 1536
+  dimensions: 1536,
+  openAIApiKey: process.env.OPENAI_API_KEY
 });
 
 export default async function handler(req, res) {
   const { force = false } = req.query;
-  const baseDir = "public/docs";
   const toInsert = [];
   const failed = [];
 
   try {
-    const folders = await fs.readdir(path.join(baseDir, "ai"));
+    // 1. Hent docId-er fra "ai" folder
+    const folders = await import("fs/promises")
+      .then(fs => fs.readdir("public/docs/ai"));
     const docIds = folders.map(f => parseInt(f)).filter(n => !isNaN(n));
 
     for (const docId of docIds) {
-      for (const sourceType of ["ai", "master"]) {
-        const docPath = path.join(baseDir, sourceType, String(docId));
-        let files;
+      const chunks = await loadAndChunkFromFileSystem(docId);
+      const grouped = {};
 
-        try {
-          files = await fs.readdir(docPath);
-        } catch {
-          console.warn(`🚫 Fant ikke katalog for ${sourceType}/${docId}`);
-          continue;
+      for (const c of chunks) {
+        const key = `${c.doc_id}-${c.source_type}-${c.filename}`;
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push(c);
+      }
+
+      for (const key in grouped) {
+        const [doc_id, source_type, filename] = key.split("-");
+        const title = filename.replace(/\.(txt|md)$/i, "");
+
+        if (!force) {
+          const { data } = await supabase
+            .from("rag_chunks")
+            .select("id")
+            .eq("doc_id", doc_id)
+            .eq("source_type", source_type)
+            .eq("title", title)
+            .limit(1);
+          if (data?.length) {
+            console.log(`⏩ Hopper over ${key} – allerede chunket`);
+            continue;
+          }
         }
 
-        for (const file of files) {
-          const ext = path.extname(file).toLowerCase();
-          if (![".txt", ".md"].includes(ext)) continue;
+        try {
+          const chunkList = grouped[key];
+          const texts = chunkList.map(c => c.content);
+          const vectors = await embeddings.embedDocuments(texts);
 
-          const title = file.replace(ext, "");
-
-          if (!force) {
-            // Sjekk om dette dokumentet + sourceType + title er allerede chunket
-            const { data, error } = await supabase
-              .from("rag_chunks")
-              .select("id")
-              .eq("doc_id", docId)
-              .eq("source_type", sourceType)
-              .eq("title", title)
-              .limit(1);
-            if (data?.length) {
-              console.log(`⏩ Hopper over ${sourceType}/${docId}/${file} – allerede chunket`);
-              continue;
-            }
+          for (let i = 0; i < chunkList.length; i++) {
+            toInsert.push({
+              ...chunkList[i],
+              embedding: vectors[i],
+              title: title,
+              created_at: new Date().toISOString()
+            });
           }
 
-          try {
-            const fullPath = path.join(docPath, file);
-            const raw = await fs.readFile(fullPath, "utf-8");
-            const chunks = chunkText(raw);
-            const embedded = await embeddings.embedDocuments(chunks);
-
-            for (let i = 0; i < chunks.length; i++) {
-              toInsert.push({
-                doc_id: docId,
-                title,
-                source_type: sourceType,
-                chunk_index: i,
-                content: chunks[i],
-                token_count: Math.ceil(chunks[i].length / 4),
-                embedding: embedded[i],
-                created_at: new Date().toISOString()
-              });
-            }
-
-            console.log(`✅ Chunket ${chunks.length} biter fra ${sourceType}/${docId}/${file}`);
-          } catch (err) {
-            console.error(`❌ Feil under chunking ${sourceType}/${docId}/${file}`, err);
-            failed.push({ doc_id: docId, source_type, file, error: err.message });
-          }
+          console.log(`✅ Chunket ${chunkList.length} biter fra ${key}`);
+        } catch (err) {
+          console.error(`❌ Feil ved embedding av ${key}`, err);
+          failed.push({ key, error: err.message });
         }
       }
     }
@@ -94,22 +83,14 @@ export default async function handler(req, res) {
     return res.status(200).json({
       successCount: toInsert.length,
       failedCount: failed.length,
-      details: {
-        success: toInsert.map(c => ({
-          doc_id: c.doc_id,
-          source_type: c.source_type,
-          chunk_index: c.chunk_index
-        })),
-        failed
-      }
+      details: { failed }
     });
   } catch (err) {
-    console.error("Feil under chunking:", err);
+    console.error("🛑 Kritisk feil under chunking:", err);
     return res.status(500).json({
       successCount: 0,
       failedCount: 1,
       details: {
-        success: [],
         failed: [{ error: err.message }]
       }
     });
