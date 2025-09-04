@@ -1,10 +1,10 @@
-import fs from "fs/promises";
-import path from "path";
+// utils/chunker.js  — FERDIG VERSJON
+// Robust parser + chunker for PDF/TXT/MD. Fungerer på Vercel Node runtime.
+// Viktig: pdf-parse lastes dynamisk KUN for .pdf for å unngå Edge-trøbbel.
 
-// 💡 Brukes til overlap
-function takeTailByTokens(text, tokens) {
-  const approxChars = tokens * 4;
-  return text.slice(-approxChars);
+function approxTokenCount(str) {
+  // ~4 chars per token heuristikk
+  return Math.ceil(str.length / 4);
 }
 
 export function normalizeText(str) {
@@ -12,145 +12,92 @@ export function normalizeText(str) {
     .replace(/\r\n/g, "\n")
     .replace(/\t/g, "  ")
     .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
+    .replace(/\u0000/g, "") // fjern null-bytes
     .trim();
 }
 
-function estimateTokens(str) {
-  return Math.ceil(str.length / 4);
+function safeSliceByTokens(text, maxTokens) {
+  // Grov token-bassert slice – holder oss ca. innenfor grenser i embedding
+  const approxChars = maxTokens * 4;
+  return text.length <= approxChars ? text : text.slice(0, approxChars);
 }
 
-export function chunkText(
-  rawText,
-  {
-    targetTokens = 800,
-    overlapTokens = 120,
-    hardMaxTokens = 1100,
-    normalize = true,
-  } = {}
-) {
-  const text = normalize ? normalizeText(rawText) : rawText;
-  if (!text || !text.trim()) return [];
+/**
+ * Del opp tekst i overlappende biter.
+ * @param {string} text
+ * @param {object} opt
+ * @param {number} opt.maxTokens - maks tokens pr chunk (default 400)
+ * @param {number} opt.overlapTokens - overlapp (default 80)
+ */
+export function chunkText(text, opt = {}) {
+  const maxTokens = opt.maxTokens ?? 400;
+  const overlapTokens = opt.overlapTokens ?? 80;
 
-  const paragraphs = text.split(/\n{2,}/g).map((p) => p.trim()).filter(Boolean);
+  const normalized = normalizeText(text);
+  if (!normalized) return [];
+
   const chunks = [];
-  let current = "";
-  let currentTokens = 0;
+  let start = 0;
+  const approxChars = maxTokens * 4;
+  const overlapChars = overlapTokens * 4;
 
-  const flush = () => {
-    if (!current.trim()) return;
-    chunks.push(current.trim());
-    current = "";
-    currentTokens = 0;
-  };
+  while (start < normalized.length) {
+    const end = Math.min(start + approxChars, normalized.length);
+    let slice = normalized.slice(start, end);
 
-  const pushWithChecks = (piece) => {
-    const pieceTokens = estimateTokens(piece);
-    if (currentTokens + pieceTokens > targetTokens) {
-      const sentences = piece.split(/(?<=[.!?])\s+/).filter(Boolean);
-      for (const s of sentences) {
-        const sTokens = estimateTokens(s + " ");
-        if (currentTokens + sTokens > hardMaxTokens) {
-          const words = s.split(/\s+/);
-          for (const w of words) {
-            const wPlus = w + " ";
-            const wTokens = estimateTokens(wPlus);
-            if (currentTokens + wTokens > hardMaxTokens) {
-              flush();
-            }
-            current += wPlus;
-            currentTokens += wTokens;
-          }
-        } else if (currentTokens + sTokens > targetTokens) {
-          flush();
-          current += s + " ";
-          currentTokens += sTokens;
-        } else {
-          current += s + " ";
-          currentTokens += sTokens;
-        }
+    // Forsøk å brekke på en pen grense (linjeskift eller punktum) hvis mulig
+    if (end < normalized.length) {
+      const lastBreak =
+        slice.lastIndexOf("\n\n") !== -1
+          ? slice.lastIndexOf("\n\n")
+          : slice.lastIndexOf(". ");
+      if (lastBreak > approxChars * 0.6) {
+        slice = slice.slice(0, lastBreak + 1);
       }
-      return;
     }
 
-    current += piece + "\n\n";
-    currentTokens += pieceTokens;
-  };
+    // Sikkerhetskutt mot token-spikes
+    slice = safeSliceByTokens(slice, maxTokens);
+    chunks.push(slice);
 
-  for (const para of paragraphs) {
-    pushWithChecks(para);
-  }
-  flush();
-
-  if (overlapTokens > 0 && chunks.length > 1) {
-    const overlapped = [];
-    for (let i = 0; i < chunks.length; i++) {
-      if (i === 0) {
-        overlapped.push(chunks[i]);
-        continue;
-      }
-      const prev = chunks[i - 1];
-      const tail = takeTailByTokens(prev, overlapTokens);
-      overlapped.push(tail + "\n" + chunks[i]);
-    }
-    return overlapped;
+    // Overlapp
+    const nextStart = start + slice.length - overlapChars;
+    start = Math.max(nextStart, start + 1);
   }
 
-  return chunks;
+  return chunks.map((content, i) => ({
+    index: i,
+    content,
+    token_estimate: approxTokenCount(content),
+  }));
 }
 
-//
-// 📂 Leser og chunker både ai/ og master/
-//
-export async function loadAndChunkFromFileSystem(docId, baseDir = "public/docs") {
-  const chunks = [];
-  const docFolders = ["ai", "master"];
-
-  for (const sourceType of docFolders) {
-    const dirPath = path.join(baseDir, sourceType, String(docId));
-    let files;
-
-    try {
-      files = await fs.readdir(dirPath);
-    } catch (err) {
-      console.warn(`📁 Fant ikke katalog: ${dirPath}`);
-      continue;
-    }
-
-    for (const filename of files) {
-      const ext = path.extname(filename).toLowerCase();
-      if (![".txt", ".md", ".pdf"].includes(ext)) continue;
-
-      const filePath = path.join(dirPath, filename);
-      let raw = "";
-
-      try {
-        if (ext === ".pdf") {
-          const buffer = await fs.readFile(filePath);
-          const { default: pdfParse } = await import("pdf-parse");
-          const data = await pdfParse(buffer);
-          raw = data.text;
-        } else {
-          raw = await fs.readFile(filePath, "utf-8");
-        }
-      } catch (err) {
-        console.error(`❌ Feil ved lesing av ${filename}`, err);
-        continue;
-      }
-
-      const chunkList = chunkText(raw);
-      chunkList.forEach((content, i) => {
-        chunks.push({
-          doc_id: Number(docId),
-          chunk_index: i,
-          content,
-          token_count: Math.ceil(content.length / 4),
-          source_type: sourceType,
-          filename,
-        });
-      });
-    }
+/**
+ * Parse innhold basert på filtype og returner plaintext.
+ * @param {Buffer|Uint8Array} fileBuffer
+ * @param {string} filename
+ */
+export async function extractPlainText(fileBuffer, filename) {
+  const lower = filename.toLowerCase();
+  if (lower.endsWith(".pdf")) {
+    // Dynamisk import for å unngå Edge/webpack-problemer når PDF ikke trengs
+    const { default: pdfParse } = await import("pdf-parse");
+    const data = await pdfParse(fileBuffer);
+    return normalizeText(data.text || "");
   }
 
-  return chunks;
+  // For .txt/.md/.json osv – anta UTF-8
+  const decoded = new TextDecoder("utf-8").decode(fileBuffer);
+  return normalizeText(decoded);
+}
+
+/**
+ * Hoved-entry: ta buffer + filnavn, gi tilbake chunks.
+ * @param {Buffer|Uint8Array} fileBuffer
+ * @param {string} filename
+ * @param {object} opt
+ */
+export async function parseAndChunk(fileBuffer, filename, opt = {}) {
+  const text = await extractPlainText(fileBuffer, filename);
+  return chunkText(text, opt);
 }
