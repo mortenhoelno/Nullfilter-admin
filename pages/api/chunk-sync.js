@@ -2,7 +2,7 @@
 
 import { loadAndChunkFromFileSystem } from "../../utils/chunker";
 import { createClient } from "@supabase/supabase-js";
-import { OpenAIEmbeddings } from "langchain/embeddings/openai";
+import { OpenAIEmbeddings } from "@langchain/openai";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
