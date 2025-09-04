@@ -1,20 +1,17 @@
 // FERDIG VERSJON: pages/api/rag/chat.js
-// — RAG-endepunkt som tar POST og svarer med mode:"rag"
-// — Kjørbar uten Supabase (stub). Hvis Supabase-variabler + RPC finnes, bruker den ekte RAG.
-// — Returnerer alltid JSON (aldri HTML), så konsollen slipper "Unexpected token '<'".
+// — RAG-endepunkt som tar POST, bruker Supabase RPC "match_chunks" hvis mulig,
+// — logger dokument-bruk til tabellen "rag_usage", og returnerer JSON med meta.
 
 import { OpenAI } from "openai";
 
-// ---------- OpenAI klient ----------
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-// ---------- (Valgfritt) Supabase klient ----------
 let supabase = null;
-try {
+async function getSupabase() {
+  if (supabase) return supabase;
   if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    // Lazy import to avoid hard dependency hvis du ikke har @supabase/supabase-js installert
     const { createClient } = await import("@supabase/supabase-js");
     supabase = createClient(
       process.env.SUPABASE_URL,
@@ -22,17 +19,14 @@ try {
       { auth: { persistSession: false } }
     );
   }
-} catch (err) {
-  // Ikke kast feil – RAG skal fortsatt funke i stub-modus
-  console.warn("[/api/rag/chat] Supabase init feilet (går i stub-modus):", err?.message);
+  return supabase;
 }
 
-// ---------- Hjelpere ----------
 function pickLastUserMessage(messages) {
   if (!Array.isArray(messages)) return "";
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
-    if (m && m.role === "user" && typeof m.content === "string") return m.content;
+    if (m?.role === "user" && typeof m.content === "string") return m.content;
   }
   return "";
 }
@@ -40,10 +34,10 @@ function pickLastUserMessage(messages) {
 function buildSystemPrompt(contextText) {
   const base = [
     "Du er en hjelpsom assistent.",
-    "Når du har faktagrunnlag (kontekst) under, prioriter dette. Hvis noe mangler i konteksten, si det ærlig og svar etter beste evne."
+    "Når du har faktagrunnlag (kontekst) under, prioriter dette. Hvis noe mangler i konteksten, si det ærlig."
   ];
   if (contextText) {
-    base.push("Relevant kontekst (ikke gjenta alt, bruk det klokt):");
+    base.push("Relevant kontekst:");
     base.push("---");
     base.push(contextText);
     base.push("---");
@@ -51,75 +45,97 @@ function buildSystemPrompt(contextText) {
   return base.join("\n");
 }
 
-// ---------- RAG: stub (alltid tilgjengelig) ----------
+// ── STUB fallback (ingen Supabase / ingen treff) ───────────────────────────────
 async function retrieveRagContextStub(_query) {
   return {
     contextText: "",
     ai_hits: 0,
-    master_hits: 0
+    master_hits: 0,
+    docCounts: {},     // { doc_id: { source_type, hits } }
+    usedRows: []       // originaltreff (tom)
   };
 }
 
-// ---------- RAG: ekte (Supabase + RPC "match_chunks") ----------
+// ── Hent RAG-kontekst via Supabase RPC "match_chunks" ─────────────────────────
 async function retrieveRagContextSupabase(query, { topK = 6 } = {}) {
-  if (!supabase || !process.env.OPENAI_API_KEY) {
-    return retrieveRagContextStub(query);
-  }
+  const sb = await getSupabase();
+  if (!sb) return retrieveRagContextStub(query);
 
   try {
-    // 1) Lag embedding av bruker-spørsmål
-    const embeddingResp = await openai.embeddings.create({
+    // 1) Embedding av spørsmålet
+    const emb = await openai.embeddings.create({
       model: "text-embedding-3-small",
       input: query
     });
-    const vector = embeddingResp?.data?.[0]?.embedding;
-    if (!Array.isArray(vector)) {
-      throw new Error("Embedding mangler eller har feil format");
-    }
+    const vector = emb?.data?.[0]?.embedding;
+    if (!Array.isArray(vector)) throw new Error("Embedding mangler");
 
-    // 2) Kall RPC i Supabase for å hente best matchende chunks
-    // Forventet RPC-signatur (vanlig praksis):
-    //   match_chunks(embedding vector(1536), match_count int, min_cosine_sim float)
-    // Output minst: content, source_type, doc_id, similarity
-    const { data, error } = await supabase.rpc("match_chunks", {
+    // 2) Hent topp-treff
+    // Forventet at RPC returnerer: content, source_type, doc_id, similarity
+    const { data, error } = await sb.rpc("match_chunks", {
       embedding: vector,
       match_count: topK,
-      min_cosine_sim: 0.2 // juster etter behov
+      min_cosine_sim: 0.2
     });
 
     if (error) {
-      console.warn("[/api/rag/chat] Supabase RPC 'match_chunks' feilet:", error.message);
+      console.warn("[/api/rag/chat] RPC match_chunks feilet:", error.message);
       return retrieveRagContextStub(query);
     }
-
     if (!Array.isArray(data) || data.length === 0) {
       return retrieveRagContextStub(query);
     }
 
-    // 3) Sett sammen kontekst og treff-statistikk
-    let ai_hits = 0;
-    let master_hits = 0;
+    let ai_hits = 0, master_hits = 0;
     const parts = [];
+    const docCounts = {};   // { [doc_id]: { source_type, hits } }
+
     for (const row of data) {
-      const chunkText = row.content || row.text || row.chunk || "";
+      const txt = row.content || row.text || row.chunk || "";
       const src = (row.source_type || "").toLowerCase();
+      const docId = row.doc_id ?? null;
+
       if (src === "ai") ai_hits++;
       else if (src === "master") master_hits++;
-      // Legg på en kort markør for kilde i konteksten (valgfritt)
-      parts.push(chunkText);
+
+      if (txt) parts.push(txt);
+
+      if (docId != null) {
+        if (!docCounts[docId]) {
+          docCounts[docId] = { source_type: src || "ai", hits: 0 };
+        }
+        docCounts[docId].hits += 1;
+      }
     }
 
     const contextText = parts.join("\n\n");
-    return { contextText, ai_hits, master_hits };
+    return { contextText, ai_hits, master_hits, docCounts, usedRows: data };
   } catch (err) {
     console.warn("[/api/rag/chat] retrieveRagContextSupabase error:", err?.message);
     return retrieveRagContextStub(query);
   }
 }
 
-// ---------- HTTP handler ----------
+// ── Logg RAG-bruk pr. doc_id i tabellen "rag_usage" ───────────────────────────
+async function logRagUsage({ docCounts, route = "/api/rag/chat" }) {
+  const sb = await getSupabase();
+  if (!sb || !docCounts || !Object.keys(docCounts).length) return;
+
+  const rows = Object.entries(docCounts).map(([doc_id, v]) => ({
+    doc_id: Number(doc_id),
+    source_type: v.source_type || "ai",
+    hits: v.hits || 0,
+    route
+  }));
+
+  // Ikke la logging knekke svaret – swallow errors
+  const { error } = await sb.from("rag_usage").insert(rows);
+  if (error) {
+    console.warn("[/api/rag/chat] rag_usage insert feilet:", error.message);
+  }
+}
+
 export default async function handler(req, res) {
-  // Kun POST. Alt annet → 405 med JSON (så fetch .json() funker fint).
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Only POST allowed at /api/rag/chat" });
   }
@@ -130,19 +146,16 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Missing or invalid 'messages' array" });
     }
 
-    // Finn siste bruker-innlegg
     const userQuery = pickLastUserMessage(messages);
+    const sb = await getSupabase();
+    const useSupabase = !!sb;
 
-    // Hent kontekst: prøv Supabase hvis mulig, ellers stub
-    const useSupabase = !!supabase;
     const rag = useSupabase
       ? await retrieveRagContextSupabase(userQuery, { topK: 6 })
       : await retrieveRagContextStub(userQuery);
 
-    // Sett sammen systemprompt med ev. kontekst
     const systemPrompt = buildSystemPrompt(rag.contextText);
 
-    // Kjør samtale med OpenAI
     const chatResponse = await openai.chat.completions.create({
       model: "gpt-4o",
       temperature: 0.7,
@@ -153,6 +166,9 @@ export default async function handler(req, res) {
     });
 
     const reply = chatResponse.choices?.[0]?.message?.content || "";
+
+    // Logg bruk (ikke await – men vi lar det await’e for enkelhet/robusthet)
+    await logRagUsage({ docCounts: rag.docCounts, route: "/api/rag/chat" });
 
     return res.status(200).json({
       ok: true,
@@ -166,10 +182,3 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Server error in /api/rag/chat" });
   }
 }
-
-// 🧪 Tips for test i DevTools fra DIN app (ikke GitHub):
-// fetch('/api/rag/chat', {
-//   method: 'POST',
-//   headers: { 'Content-Type': 'application/json' },
-//   body: JSON.stringify({ messages: [{ role:'user', content:'Hva vet du om dokumentene mine?' }] })
-// }).then(r=>r.json()).then(console.log).catch(console.error);
