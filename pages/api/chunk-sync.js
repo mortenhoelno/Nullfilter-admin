@@ -1,6 +1,6 @@
 // pages/api/chunk-sync.js
 
-import { loadAndChunkFromFileSystem } from "@/utils/chunker";
+import { loadAndChunkFromFileSystem } from "../../utils/chunker";
 import { createClient } from "@supabase/supabase-js";
 import { OpenAIEmbeddings } from "langchain/embeddings/openai";
 
