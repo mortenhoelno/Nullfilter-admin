@@ -1,9 +1,9 @@
-// Fil: pages/index.js
-
+import { useState } from "react";
 import Link from "next/link";
 
 export default function Dashboard() {
-  // 🧪 Testfunksjon for /api/chat
+  const [responseText, setResponseText] = useState(null);
+
   async function testChatApi() {
     const resp = await fetch("/api/chat", {
       method: "POST",
@@ -14,9 +14,10 @@ export default function Dashboard() {
         history: []
       })
     });
+
     const data = await resp.json();
     console.log("🔍 Svar fra /api/chat:", data);
-    alert("Svar logget i konsollen ✅");
+    setResponseText(data.reply || "Ingen svar mottatt 😕");
   }
 
   return (
@@ -100,6 +101,20 @@ export default function Dashboard() {
             </button>
           </li>
         </ul>
+
+        {/* 👇 Viser AI-svaret rett under knappen */}
+        {responseText && (
+          <div style={{
+            marginTop: "1.5rem",
+            padding: "1rem",
+            backgroundColor: "#eef2ff",
+            borderLeft: "4px solid #4338ca",
+            borderRadius: "6px"
+          }}>
+            <strong>Svar fra AI:</strong>
+            <p style={{ marginTop: "0.5rem" }}>{responseText}</p>
+          </div>
+        )}
       </section>
     </main>
   );
