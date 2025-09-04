@@ -1,25 +1,41 @@
-// ferdig versjon
-// Enkel, robust chunker: avsnitt → setninger → ord, med overlapp.
-// Vi holder oss til "ca. tokens" ved å anta ~4 tegn per token.
+// utils/chunker.js
 
+import fs from "fs/promises";
+import path from "path";
+
+// 💡 Brukes til overlap
+function takeTailByTokens(text, tokens) {
+  const approxChars = tokens * 4;
+  return text.slice(-approxChars);
+}
+
+export function normalizeText(str) {
+  return str
+    .replace(/\r\n/g, '\n')
+    .replace(/\t/g, '  ')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+// 🔢 Estimat for tokens basert på tegn (grov tommelfingerregel)
 function estimateTokens(str) {
-  // veldig grov estimat, men ok for chunking
   return Math.ceil(str.length / 4);
 }
 
+// ✂️ Selve chunkeren – robust og fleksibel
 export function chunkText(
   rawText,
   {
-    targetTokens = 800,     // ca. 800 tokens per chunk
-    overlapTokens = 120,    // ca. 120 tokens overlapp
-    hardMaxTokens = 1100,   // sikkerhetstak
+    targetTokens = 800,
+    overlapTokens = 120,
+    hardMaxTokens = 1100,
     normalize = true
   } = {}
 ) {
   const text = normalize ? normalizeText(rawText) : rawText;
   if (!text || !text.trim()) return [];
 
-  // Splitt i grove blokker (avsnitt)
   const paragraphs = text.split(/\n{2,}/g).map(p => p.trim()).filter(Boolean);
 
   const chunks = [];
@@ -36,12 +52,10 @@ export function chunkText(
   const pushWithChecks = (piece) => {
     const pieceTokens = estimateTokens(piece);
     if (currentTokens + pieceTokens > targetTokens) {
-      // hvis vi vil sprenge target, forsøk å setnings-splitte
       const sentences = piece.split(/(?<=[.!?])\s+/).filter(Boolean);
       for (const s of sentences) {
         const sTokens = estimateTokens(s + ' ');
         if (currentTokens + sTokens > hardMaxTokens) {
-          // nødløsning: tvangssplitt på ord
           const words = s.split(/\s+/);
           for (const w of words) {
             const wPlus = (w + ' ');
@@ -53,7 +67,6 @@ export function chunkText(
             currentTokens += wTokens;
           }
         } else if (currentTokens + sTokens > targetTokens) {
-          // nær target: flush og start ny
           flush();
           current += s + ' ';
           currentTokens += sTokens;
@@ -64,7 +77,7 @@ export function chunkText(
       }
       return;
     }
-    // god plass – sleng inn hele paragrafen
+
     current += piece + '\n\n';
     currentTokens += pieceTokens;
   };
@@ -74,7 +87,6 @@ export function chunkText(
   }
   flush();
 
-  // Legg inn overlapp mellom nabo-chunks
   if (overlapTokens > 0 && chunks.length > 1) {
     const overlapped = [];
     for (let i = 0; i < chunks.length; i++) {
@@ -82,7 +94,6 @@ export function chunkText(
         overlapped.push(chunks[i]);
         continue;
       }
-      // hent hale fra forrige
       const prev = chunks[i - 1];
       const tail = takeTailByTokens(prev, overlapTokens);
       overlapped.push(tail + '\n' + chunks[i]);
@@ -93,17 +104,44 @@ export function chunkText(
   return chunks;
 }
 
-function takeTailByTokens(text, tokens) {
-  // grovt: klipp siste N*4 tegn
-  const approxChars = tokens * 4;
-  return text.slice(-approxChars);
-}
+//
+// 📂 Hovedfunksjon: Leser og chunker både ai/ og master/
+//
+export async function loadAndChunkFromFileSystem(docId, baseDir = "public/docs") {
+  const chunks = [];
 
-export function normalizeText(str) {
-  return str
-    .replace(/\r\n/g, '\n')
-    .replace(/\t/g, '  ')
-    .replace(/[ \t]+\n/g, '\n') // trim bakerst
-    .replace(/\n{3,}/g, '\n\n') // maks to linjeskift
-    .trim();
+  const docFolders = ["ai", "master"]; // begge versjoner
+
+  for (const sourceType of docFolders) {
+    const dirPath = path.join(baseDir, sourceType, String(docId));
+    let files;
+
+    try {
+      files = await fs.readdir(dirPath);
+    } catch (err) {
+      console.warn(`📁 Fant ikke katalog: ${dirPath}`);
+      continue;
+    }
+
+    for (const filename of files) {
+      if (!filename.endsWith(".txt") && !filename.endsWith(".md")) continue;
+
+      const filePath = path.join(dirPath, filename);
+      const raw = await fs.readFile(filePath, "utf-8");
+
+      const chunkList = chunkText(raw);
+      chunkList.forEach((content, i) => {
+        chunks.push({
+          doc_id: Number(docId),
+          chunk_index: i,
+          content,
+          token_count: Math.ceil(content.length / 4),
+          source_type: sourceType, // ai eller master
+          filename,
+        });
+      });
+    }
+  }
+
+  return chunks;
 }
