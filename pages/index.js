@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 
 export default function Home() {
+  // === Eksisterende state (chunk-sync + embeddings) ===
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState("new");
   const [limit, setLimit] = useState(500);
@@ -14,6 +15,10 @@ export default function Home() {
   const [startedAt, setStartedAt] = useState(null);
   const [lastRate, setLastRate] = useState(0); // rows per second (smoothed)
   const stopFlag = useRef(false);
+
+  // === NY: Chat/RAG-statistikk ===
+  const [chatStats, setChatStats] = useState(null);
+  const [chatStatsErr, setChatStatsErr] = useState("");
 
   function fmtSeconds(s) {
     if (!isFinite(s) || s < 0) return "—";
@@ -107,8 +112,21 @@ export default function Home() {
     stopFlag.current = true;
   }
 
+  // === NY: Hent Chat/RAG-statistikk ===
+  async function fetchChatStats() {
+    try {
+      const res = await fetch("/api/chat-stats");
+      const json = await res.json();
+      setChatStats(json);
+      setChatStatsErr("");
+    } catch (e) {
+      setChatStatsErr(String(e?.message || e));
+    }
+  }
+
   useEffect(() => {
-    fetchStats();
+    fetchStats();       // embeddings status
+    fetchChatStats();   // chat/RAG status
   }, []);
 
   // ETA-beregning
@@ -119,21 +137,26 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-5xl mx-auto space-y-6">
-        <header>
-          <h1 className="text-3xl font-bold">Adminpanel</h1>
-          <p className="text-gray-600">
-            Hurtigtilganger, chunking og embeddings. Nå med bever-ETA 🦫⏱️
-          </p>
+      <div className="max-w-6xl mx-auto space-y-6">
+        <header className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold">Adminpanel</h1>
+            <p className="text-gray-600">
+              Hurtigtilganger, chunking og embeddings. Nå med bever-ETA 🦫⏱️ – og RAG-dashboard!
+            </p>
+          </div>
+          <a
+            href="/admin"
+            className="mt-1 inline-flex items-center px-4 py-2 rounded-xl bg-purple-600 text-white hover:bg-purple-500"
+          >
+            🧰 Gå til Admin
+          </a>
         </header>
 
         {/* Hurtigtilgang */}
         <section className="bg-white rounded-2xl shadow p-5">
           <h2 className="text-lg font-semibold mb-3">🔗 Hurtigtilgang</h2>
           <div className="flex flex-wrap gap-3">
-            <a href="/admin" className="px-4 py-2 rounded-xl bg-purple-600 text-white hover:bg-purple-500">
-              🧰 Dokumentopplasting
-            </a>
             <a href="/chat-nullfilter" className="px-4 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-500">
               👉 Null Filter Chat
             </a>
@@ -141,9 +164,90 @@ export default function Home() {
               👉 Keepertrening Chat
             </a>
             <a href="/api/chat" className="px-4 py-2 rounded-xl bg-slate-900 text-white hover:opacity-90">
-              🔎 Test /api/chat nå
+              🔎 Test /api/chat (GET viser 405 – bruk POST fra UI/konsoll)
+            </a>
+            <a href="/api/rag/chat" className="px-4 py-2 rounded-xl bg-slate-900 text-white hover:opacity-90">
+              🔎 Test /api/rag/chat (GET viser 405 – bruk POST fra UI/konsoll)
             </a>
           </div>
+        </section>
+
+        {/* 📊 NY: Chat/RAG-statistikk */}
+        <section className="bg-white rounded-2xl shadow p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold">📊 Chat/RAG-statistikk</h2>
+            <button
+              onClick={fetchChatStats}
+              className="px-3 py-2 rounded-xl bg-gray-200 hover:bg-gray-300 text-sm"
+            >
+              Oppdater
+            </button>
+          </div>
+
+          {chatStatsErr && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded text-rose-700">
+              Feil ved henting av /api/chat-stats: {chatStatsErr}
+            </div>
+          )}
+
+          {!chatStats && !chatStatsErr && (
+            <div className="text-gray-500">Henter RAG/Chat-status…</div>
+          )}
+
+          {chatStats && (
+            <div className="grid md:grid-cols-2 gap-6">
+              <section className="bg-gray-50 border rounded-xl p-4">
+                <h3 className="font-semibold mb-2">Topp 10 dokumenter (siste 7 dager)</h3>
+                {chatStats.top_docs?.length ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left border-b">
+                          <th className="py-1 pr-2">Doc ID</th>
+                          <th className="py-1 pr-2">Total</th>
+                          <th className="py-1 pr-2">AI</th>
+                          <th className="py-1 pr-2">Master</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {chatStats.top_docs.map((d) => (
+                          <tr key={d.doc_id} className="border-b last:border-0">
+                            <td className="py-1 pr-2 font-mono">{d.doc_id}</td>
+                            <td className="py-1 pr-2">{d.total}</td>
+                            <td className="py-1 pr-2">{d.ai}</td>
+                            <td className="py-1 pr-2">{d.master}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="text-gray-500 text-sm">Ingen data ennå. Still spørsmål i chat for å fylle loggen.</div>
+                )}
+              </section>
+
+              <section className="bg-gray-50 border rounded-xl p-4">
+                <h3 className="font-semibold mb-2">Chunks & Embeddings (snapshot)</h3>
+                <ul className="text-sm space-y-1">
+                  <li>Total chunks: <span className="font-mono">{chatStats.chunks?.total || 0}</span></li>
+                  <li>Med embedding: <span className="font-mono">{chatStats.chunks?.with_embedding || 0}</span></li>
+                  <li>AI-chunks: <span className="font-mono">{chatStats.chunks?.by_source?.ai || 0}</span></li>
+                  <li>Master-chunks: <span className="font-mono">{chatStats.chunks?.by_source?.master || 0}</span></li>
+                </ul>
+
+                <div className="mt-3 text-sm">
+                  <div>Modes (siste 7d):</div>
+                  <ul className="list-disc pl-5">
+                    <li>RAG-kall: <span className="font-mono">{chatStats.modes?.rag || 0}</span></li>
+                    <li>Normal: <span className="font-mono">{chatStats.modes?.normal || 0}</span></li>
+                  </ul>
+                  <p className="text-xs text-gray-500 mt-2">
+                    * “Normal” telles ikke ennå – vi logger primært RAG via <code>rag_usage</code>.
+                  </p>
+                </div>
+              </section>
+            </div>
+          )}
         </section>
 
         {/* Chunking */}
