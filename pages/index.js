@@ -118,4 +118,20 @@ export default function Home() {
                 type="number"
                 min={1}
                 value={limit}
-                onChange={
+                onChange={(e) => setLimit(Number(e.target.value))}
+                className="ml-2 border rounded-lg px-3 py-2 w-28"
+              />
+            </label>
+            <button
+              onClick={runBackfill}
+              disabled={loading}
+              className="px-4 py-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-40"
+            >
+              {loading ? "Backfiller…" : "Embed backfill"}
+            </button>
+          </div>
+        </section>
+      </div>
+    </main>
+  );
+}
