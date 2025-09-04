@@ -1,4 +1,4 @@
-// pages/api/chunk-sync.js  — FERDIG VERSJON
+// pages/api/chunk-sync.js — FERDIG VERSJON (med ekstra debug og tydeligere svar)
 export const config = {
   api: {
     bodyParser: { sizeLimit: "25mb" },
@@ -10,22 +10,18 @@ import { createClient } from "@supabase/supabase-js";
 import { parseAndChunk } from "../../utils/chunker";
 
 // --- KONFIG ---
+// Tillat å overstyre bucket-navn via env hvis dine heter noe annet.
+const BUCKET_AI = process.env.SUPABASE_BUCKET_AI || "docs-ai";
+const BUCKET_MASTER = process.env.SUPABASE_BUCKET_MASTER || "docs-master";
+const TABLE_CHUNKS = "rag_chunks";
+const MAX_FILES_PER_RUN = 100;
+
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-// Sett riktige bucket-navn her
-const BUCKET_AI = "docs-ai";
-const BUCKET_MASTER = "docs-master";
-
-// Tabell for chunks
-const TABLE_CHUNKS = "rag_chunks";
-
-// Hvor mange vi prosesserer pr. run (kan økes)
-const MAX_FILES_PER_RUN = 100;
-
 function supabaseAdmin() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    throw new Error("Supabase env mangler. Sjekk URL/Service Role.");
+    throw new Error("Supabase env mangler. Sjekk NEXT_PUBLIC_SUPABASE_URL og SUPABASE_SERVICE_ROLE_KEY.");
   }
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
     auth: { persistSession: false },
@@ -33,33 +29,34 @@ function supabaseAdmin() {
 }
 
 async function listAllFiles(supabase, bucket) {
-  // List alle filer i bucketens rot og undermapper
-  // NB: Supabase Storage list() må kalles per "directory"; vi bruker en enkel rekursjon.
+  // Enkel "flate" list – forventer at filene ligger i undermapper som "49/fil.pdf".
   async function listDir(path = "") {
-    const { data, error } = await supabase.storage.from(bucket).list(path, {
-      limit: 1000,
-    });
+    const { data, error } = await supabase.storage.from(bucket).list(path, { limit: 1000 });
     if (error) throw error;
 
     const files = [];
     for (const entry of data || []) {
-      if (entry.name.endsWith("/")) continue;
-      if (entry.id) {
-        // ny SDK kan gi id; uansett, bygg path selv
-      }
-      if (entry.metadata && entry.metadata.mimetype === "application/x-directory") {
-        // older style directories
+      // Hvis entry er en "mappe", kall rekursivt
+      if (entry.id === null && entry.name && !entry.name.includes(".")) {
         const sub = await listDir(path ? `${path}/${entry.name}` : entry.name);
         files.push(...sub);
-      } else if (entry.name && entry.id === undefined) {
-        // Fil
+      } else {
         const fullPath = path ? `${path}/${entry.name}` : entry.name;
-        files.push(fullPath);
+        // Hopp over "skjulte"/tom-noder
+        if (fullPath && fullPath.includes("/")) {
+          files.push(fullPath);
+        }
       }
     }
     return files;
   }
-  return listDir("");
+  try {
+    const res = await listDir("");
+    return res.filter(Boolean);
+  } catch (e) {
+    // Returner tom + feilhint oppstrøms
+    return { __error: String(e) };
+  }
 }
 
 async function downloadFile(supabase, bucket, path) {
@@ -89,10 +86,8 @@ async function alreadyChunked(supabase, docId, sourceType) {
 }
 
 function inferDocIdFromPath(p) {
-  // Forventer struktur som "49/filnavn.pdf" eller "12/ai.txt"
-  const match = p.match(/^(\d+)\//);
-  if (!match) return null;
-  return parseInt(match[1], 10);
+  const m = p.match(/^(\d+)\//);
+  return m ? parseInt(m[1], 10) : null;
 }
 
 export default async function handler(req, res) {
@@ -103,21 +98,24 @@ export default async function handler(req, res) {
 
   const mode = (req.body?.mode || "all").toLowerCase(); // "all" | "new"
   const maxFiles = Math.min(req.body?.limit || MAX_FILES_PER_RUN, 1000);
-
   const supabase = supabaseAdmin();
 
   try {
-    const [aiPaths, masterPaths] = await Promise.all([
-      listAllFiles(supabase, BUCKET_AI),
-      listAllFiles(supabase, BUCKET_MASTER),
-    ]);
+    const aiList = await listAllFiles(supabase, BUCKET_AI);
+    const masterList = await listAllFiles(supabase, BUCKET_MASTER);
 
-    const work = [];
-    for (const p of aiPaths) work.push({ bucket: BUCKET_AI, path: p, source_type: "ai" });
-    for (const p of masterPaths) work.push({ bucket: BUCKET_MASTER, path: p, source_type: "master" });
+    // Håndter feil ved listing
+    const listErrors = {};
+    if (aiList && aiList.__error) listErrors.ai = aiList.__error;
+    if (masterList && masterList.__error) listErrors.master = masterList.__error;
 
-    // Sortér for stabilitet
-    work.sort((a, b) => a.path.localeCompare(b.path));
+    const aiPaths = Array.isArray(aiList) ? aiList : [];
+    const masterPaths = Array.isArray(masterList) ? masterList : [];
+
+    const work = [
+      ...aiPaths.map((p) => ({ bucket: BUCKET_AI, path: p, source_type: "ai" })),
+      ...masterPaths.map((p) => ({ bucket: BUCKET_MASTER, path: p, source_type: "master" })),
+    ].sort((a, b) => a.path.localeCompare(b.path));
 
     const results = [];
     let processed = 0;
@@ -139,7 +137,6 @@ export default async function handler(req, res) {
         }
       }
 
-      // Last ned fil, chunk, og lagre
       const fileBuf = await downloadFile(supabase, item.bucket, item.path);
       const filename = item.path.split("/").pop() || "fil";
       const chunks = await parseAndChunk(fileBuf, filename, {
@@ -149,12 +146,10 @@ export default async function handler(req, res) {
 
       const rows = chunks.map((c) => ({
         doc_id: docId,
-        source_type: item.source_type, // "ai" | "master"
+        source_type: item.source_type,
         chunk_index: c.index,
         content: c.content,
         token_estimate: c.token_estimate,
-        // embedding fylles inn i ETTERKANT (egen jobb), eller gjør det her hvis du vil
-        // embedding: <Float32Array>  (ikke nå)
         source_path: `${item.bucket}/${item.path}`,
       }));
 
@@ -163,15 +158,27 @@ export default async function handler(req, res) {
       processed += 1;
     }
 
-    res.status(200).json({
+    const payload = {
       ok: true,
       mode,
       processed,
       totalSeen: work.length,
       maxFiles,
+      bucketInfo: {
+        aiBucket: BUCKET_AI,
+        masterBucket: BUCKET_MASTER,
+        aiCount: aiPaths.length,
+        masterCount: masterPaths.length,
+        ...(Object.keys(listErrors).length ? { errors: listErrors } : {}),
+      },
       results,
-      hint: "Hvis PDF feiler i bygg: husk Node runtime (denne ruta bruker Node).",
-    });
+      hint:
+        (aiPaths.length + masterPaths.length) === 0
+          ? "Fant ingen filer i bucketene. Sjekk: (1) bucket-navn (docs-ai/docs-master) eller sett env SUPABASE_BUCKET_AI/MASTER, (2) at filer ligger under <docId>/filnavn.pdf, (3) at du har lastet opp i Supabase Storage, ikke bare i Git."
+          : "Hvis PDF feiler i bygg: husk Node runtime (denne ruta bruker Node).",
+    };
+
+    res.status(200).json(payload);
   } catch (err) {
     res.status(500).json({ ok: false, error: String(err) });
   }
