@@ -16,17 +16,12 @@ export default function Dashboard() {
     });
 
     const data = await resp.json();
-    console.log("🔍 Svar fra /api/chat:", data);
     setResponseText(data.reply || "Ingen svar mottatt 😕");
   }
 
   async function runChunkSync(force = false) {
-    const resp = await fetch("/api/chunk-sync", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ force })
-    });
-
+    const url = `/api/chunk-sync${force ? "?force=true" : ""}`;
+    const resp = await fetch(url);
     const data = await resp.json();
     alert(`✅ Ferdig: ${data.successCount} dokumenter chunket.\n❌ Feil: ${data.failedCount}`);
     console.log("Detaljer:", data);
@@ -71,7 +66,7 @@ export default function Dashboard() {
                 textDecoration: "underline",
                 fontSize: "1.1rem"
               }}>
-                🛠 Gå til Adminside
+                🛠 Gå til Admin (dokumentopplasting)
               </a>
             </Link>
           </li>
@@ -97,7 +92,6 @@ export default function Dashboard() {
               </a>
             </Link>
           </li>
-
           <li style={{ marginTop: "1rem" }}>
             <button
               onClick={testChatApi}
@@ -113,7 +107,6 @@ export default function Dashboard() {
               🔍 Test /api/chat nå
             </button>
           </li>
-
           <li style={{ marginTop: "1rem" }}>
             <button
               onClick={() => runChunkSync(false)}
@@ -123,14 +116,12 @@ export default function Dashboard() {
                 color: "white",
                 border: "none",
                 borderRadius: "6px",
-                cursor: "pointer"
+                cursor: "pointer",
+                marginRight: "1rem"
               }}
             >
-              🚀 Chunk KUN nye dokumenter
+              🚀 Kjør chunking av nye dokumenter
             </button>
-          </li>
-
-          <li style={{ marginTop: "0.5rem" }}>
             <button
               onClick={() => runChunkSync(true)}
               style={{
@@ -142,11 +133,12 @@ export default function Dashboard() {
                 cursor: "pointer"
               }}
             >
-              ⚠️ Overskriv og chunk ALLE dokumenter
+              ♻️ Tving chunking av alle
             </button>
           </li>
         </ul>
 
+        {/* 👇 Viser AI-svaret rett under knappen */}
         {responseText && (
           <div style={{
             marginTop: "1.5rem",
