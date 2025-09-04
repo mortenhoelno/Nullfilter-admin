@@ -20,8 +20,13 @@ export default function Dashboard() {
     setResponseText(data.reply || "Ingen svar mottatt 😕");
   }
 
-  async function runChunkSync() {
-    const resp = await fetch("/api/chunk-sync");
+  async function runChunkSync(force = false) {
+    const resp = await fetch("/api/chunk-sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ force })
+    });
+
     const data = await resp.json();
     alert(`✅ Ferdig: ${data.successCount} dokumenter chunket.\n❌ Feil: ${data.failedCount}`);
     console.log("Detaljer:", data);
@@ -92,6 +97,7 @@ export default function Dashboard() {
               </a>
             </Link>
           </li>
+
           <li style={{ marginTop: "1rem" }}>
             <button
               onClick={testChatApi}
@@ -107,9 +113,10 @@ export default function Dashboard() {
               🔍 Test /api/chat nå
             </button>
           </li>
+
           <li style={{ marginTop: "1rem" }}>
             <button
-              onClick={runChunkSync}
+              onClick={() => runChunkSync(false)}
               style={{
                 padding: "0.5rem 1rem",
                 backgroundColor: "#1d4ed8",
@@ -119,12 +126,27 @@ export default function Dashboard() {
                 cursor: "pointer"
               }}
             >
-              🚀 Kjør chunking av dokumenter
+              🚀 Chunk KUN nye dokumenter
+            </button>
+          </li>
+
+          <li style={{ marginTop: "0.5rem" }}>
+            <button
+              onClick={() => runChunkSync(true)}
+              style={{
+                padding: "0.5rem 1rem",
+                backgroundColor: "#b91c1c",
+                color: "white",
+                border: "none",
+                borderRadius: "6px",
+                cursor: "pointer"
+              }}
+            >
+              ⚠️ Overskriv og chunk ALLE dokumenter
             </button>
           </li>
         </ul>
 
-        {/* 👇 Viser AI-svaret rett under knappen */}
         {responseText && (
           <div style={{
             marginTop: "1.5rem",
