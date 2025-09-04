@@ -1,5 +1,5 @@
 // components/ChatEngine.js — FERDIG VERSJON
-// Meldingsmotor med ventemeldinger (lys, fade-in, typing, stor melding-pool)
+// Meldingsmotor med ventemeldinger (uten boble, fade-in, typing, stor melding-pool)
 
 import { useRef, useEffect, useState } from "react";
 
@@ -147,7 +147,50 @@ export default function ChatEngine({
     "Bryr meg mer enn ord kan uttrykke... ikke glem hvor langt du har kommet! 🌈",
     "Setter sammen kjærlighet i ord... du har alt du trenger inni deg allerede ✨",
     "Vil omfavne deg gjennom skjermen... du er verdifull uansett hva du presterer 💝",
+    
+// Noen nevrobiologiske 
+    "Ett øyeblikk - amygdala står i veien for de kloke tankene... 🧠",
+"Må tråkke over noen gamle oppgåtte tankeuvaner først... 🚶‍♀️",
+"Venter på at frontallappen skal få kontroll over situasjonen 💭",
+"Sender signaler gjennom nevronettverket... litt trafikk der! ⚡",
+"Måtte omgå noen kognitive snarveier som førte til ingensteds 🛤️",
+"Hippocampus graver fram den perfekte hukommelsen for deg 🔍",
+"Dopaminsystemet mitt jobber på høygir for å levere kvalitet! 💪",
+"Ett sekund - må få synapsebrua til å fungere igjen... 🌉",
+"Korteksområdene mine har møte om ditt spørsmål akkurat nå 🤝",
+"Må starte opp det pre-frontale planleggingssenteret... ⚙️",
+"Serotoninet mitt sørger for at svaret blir både klok og hyggelig 😊",
+"Venter på grønt lys fra beslutningssenteret i hjernen... 🚦",
+"Måtte kalibrere nevrotransmitterne for optimal ytelse ⚖️",
+"Ett øyeblikk - arbeidsminnet mitt organiserer all informasjon 📊",
+"Sender beskjed mellom høyre og venstre hjernehalvdel... 📡",
+"Cerebellum kalibrerer balansen i svaret ditt perfekt ⚖️",
+"Måtte restarte det limbiske systemet - det var litt følelsesladd! 💝",
+"Temporal lappen min søker gjennom alle språkdatabasene... 📚",
+"Venter på at speilnevronene skal forstå hva du egentlig trenger 🪞",
+"Parietal lappen prosesserer all spatial informasjon for deg nå! 🗺️",
+"Amygdala har fått panikk over hvor bra svaret skal bli! 😱🧠",
+"Hippocampus nekter å slippe ut minnene uten passord... 🔐",
+"Frontallappen og reptilhjernen krangler om hvem som bestemmer 🦎👔",
+"Dopaminreseptorene mine danser av glede - de vet dette blir bra! 💃",
+"Må overbevise amygdala om at dette IKKE er en trussel... 🙄",
+"Nevronene mine spiller mikado - ingen vil bevege seg først! 🥢",
+"Serotoninet mitt er så optimistisk at det nesten er flaut... 😅",
+"Korteksen har kalt inn ekspertene - de diskuterer høylydt! 🗣️",
+"Arbeidsminnet mitt har for mange faner åpne, akkurat som Chrome 💻",
+"Synapsebrua er stengt for reparasjon... bruker omveien! 🚧",
+"Cerebellum insisterer på at svaret skal være 'perfekt balansert' ⚖️😤",
+"Nevrotransmitterne mine har teambuilding - de lærer å samarbeide! 🤝",
+"Måtte gi amygdala en snickers - den var ikke seg selv sulten 🍫",
+"Hjernehalvdelene mine diskuterer - logikk vs. kreativitet! 🎭📊",
+"Speilnevronene mine øver på å forstå deg bedre... 🪞🤔",
+"Limbiske systemet mitt er i møte med rasjonaliteten - stort drama! 🎬",
+"Hippocampus har glemt hvor den la minnene... ironisk nok 🤦‍♀️",
+"Prefrontal korteks prøver å overtale reptilhjernen til å slappe av 🧘‍♀️",
+"Nevronettverket mitt har dårlig mobildekning akkurat nå... 📶",
+"Alle hjernecellene mine hadde møte - de bestemte seg for å gi deg gull! ⭐",
 
+    
     // 50 morsomme digitale uhell
     "Ups, mistet bøkene på gulvet - samler opp alle svarene dine! 📚😅",
     "Rydder i de siste nuller og enere... hvor ble eineren av? 🔢",
@@ -259,14 +302,12 @@ export default function ChatEngine({
           </div>
         ))}
 
-        {/* Ventemelding med fade-in + typing */}
+        {/* Ventemelding som ren tekst, fade-in + typing */}
         {waitingMessage && (
           <div className="flex justify-start">
             <div
               className={`
-                px-3 py-2 rounded-2xl text-sm italic text-gray-600
-                max-w-[85%] whitespace-pre-wrap
-                bg-gray-50 border border-gray-200 shadow-sm
+                text-sm italic text-gray-500
                 opacity-0 animate-fadeIn
               `}
               style={{ animation: "fadeIn 0.8s ease-in forwards" }}
