@@ -64,16 +64,16 @@ async function upsertChunkRows(supabase, rows) {
   return { inserted: rows.length };
 }
 
+// Viktig: bruk vanlig select + limit(1) (ikke head:true) for pålitelighet
 async function alreadyChunked(supabase, docId, sourceType) {
-  // Viktig: med head:true er data = null. Bruk count.
-  const { count, error } = await supabase
+  const { data, error } = await supabase
     .from(TABLE_CHUNKS)
-    .select("id", { count: "exact", head: true })
+    .select("id", { count: "exact" })
     .eq("doc_id", docId)
-    .eq("source_type", sourceType);
-
+    .eq("source_type", sourceType)
+    .limit(1);
   if (error) throw new Error(`DB select error: ${JSON.stringify(error)}`);
-  return (count ?? 0) > 0;
+  return Array.isArray(data) && data.length > 0;
 }
 
 function inferDocIdFromPath(p) {
