@@ -1,4 +1,4 @@
-// utils/chunker.js — FERDIG VERSJON (rag_chunks)
+// utils/chunker.js — FERDIG VERSJON (rag_chunks + chunkText alias)
 // - Leser fil (txt/md/pdf), normaliserer og chunker
 // - Lagrer til public.rag_chunks med upsert (doc_id, source_type, source_path, chunk_index)
 // - Støtter embedding (OpenAI text-embedding-3-small), kan skrus av
@@ -59,6 +59,9 @@ export function simpleChunk(text, { maxTokens = 500, overlapTokens = 50 } = {}) 
   return chunks;
 }
 
+// 🔧 For bakoverkompatibilitet: alias til simpleChunk
+export const chunkText = simpleChunk;
+
 async function readFileSmart(filePath) {
   const ext = path.extname(filePath).toLowerCase();
   const buf = await fs.readFile(filePath);
@@ -82,12 +85,7 @@ async function embedBatch(texts) {
 // ───────── hoved-API ─────────
 
 /**
- * Ingest en enkelt fil:
- * - filePath: absolutt eller relativ path i serverens filsystem
- * - docId: nummeret i ditt system (1..N)
- * - sourceType: "ai" | "master"
- * - title: visningsnavn/tittel du ønsker på dokumentet (lagres i tabellen)
- * - generateEmbeddings: true for å fylle "embedding" (vector(1536))
+ * Ingest en enkelt fil
  */
 export async function ingestFileToRag({
   filePath,
@@ -119,7 +117,7 @@ export async function ingestFileToRag({
     embeddings = await embedBatch(parts);
   }
 
-  // 4) Skriv til DB (upsert per chunk_index)
+  // 4) Skriv til DB
   const rows = parts.map((content, idx) => ({
     doc_id: Number(docId),
     source_type: sourceType.toLowerCase(),
@@ -127,12 +125,10 @@ export async function ingestFileToRag({
     chunk_index: idx,
     content,
     token_count: approxTokenCount(content),
-    token_estimate: approxTokenCount(content), // kolonne finnes hos deg
+    token_estimate: approxTokenCount(content),
     title: title ?? path.basename(filePath),
     sha256: sha256OfString(content),
     embedding: embeddings[idx] ?? null
-    // created_at: default (DB)
-    // updated_at: settes av trigger (SQL nedenfor)
   }));
 
   const { error } = await sb
@@ -145,12 +141,11 @@ export async function ingestFileToRag({
 }
 
 /**
- * Ingest flere filer på rappen.
+ * Ingest flere filer
  */
 export async function ingestMany(files, options = {}) {
   const out = [];
   for (const f of files) {
-    // f: { filePath, docId, sourceType, title? }
     const r = await ingestFileToRag({ ...f, ...options });
     out.push(r);
   }
