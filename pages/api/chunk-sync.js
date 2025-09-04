@@ -1,190 +1,217 @@
-// pages/api/chunk-sync.js — FERDIG (documents + ai/ og master/)
-// Bruker server-klienten din (getSupabaseServer). Normaliserer source_type til 'ai' | 'master'.
+// pages/api/chunk-sync.js
+// FERDIG VERSJON (Node API). Kjører chunking + embeddings i ett.
+// Default: mode=new (skipper eksisterende doc/source_type/chunk_index)
 
-export const config = {
-  api: { bodyParser: { sizeLimit: "25mb" }, externalResolver: true },
-};
+import { createClient } from '@supabase/supabase-js';
+import pdfParse from 'pdf-parse';
 
-import { parseAndChunk } from "../../utils/chunker";
-import { getSupabaseServer } from "../../utils/supabaseServer";
-import { storageBucket as DEFAULT_BUCKET } from "../../utils/storagePaths"; // hos deg: 'documents'
+const BUCKET = 'documents';
+const TABLE = 'rag_chunks';
+const EMBEDDING_MODEL = 'text-embedding-3-small';
+const EMBEDDING_DIM = 1536;
 
-const TABLE_CHUNKS = "rag_chunks";
-const MAX_FILES_PER_RUN = 100;
+// --- ENV ---
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-// Sett bucket fra utils eller env, fallback 'documents'
-const STORAGE_BUCKET =
-  process.env.SUPABASE_STORAGE_BUCKET || DEFAULT_BUCKET || "documents";
-
-// Kun lowercase prefikser
-const PREFIXES = ["ai", "master"];
-
-// ---------- helpers ----------
-function joinPath(a, b) {
-  if (!a) return b;
-  if (!b) return a;
-  return a.replace(/\/+$/, "") + "/" + b.replace(/^\/+/, "");
-}
-
-async function listImmediateDirs(supabase, bucket, prefix) {
-  const { data, error } = await supabase.storage.from(bucket).list(prefix, { limit: 1000 });
-  if (error) throw new Error(`Storage list error @ ${bucket}/${prefix}: ${JSON.stringify(error)}`);
-  return (data || [])
-    .filter((e) => e && e.name && !e.name.includes("."))
-    .map((e) => e.name); // docId som string
-}
-
-async function listFilesInDocDir(supabase, bucket, prefix, docDir) {
-  const dirPath = joinPath(prefix, docDir); // f.eks. "ai/1" eller "master/50"
-  const { data, error } = await supabase.storage.from(bucket).list(dirPath, { limit: 1000 });
-  if (error) throw new Error(`Storage list error @ ${bucket}/${dirPath}: ${JSON.stringify(error)}`);
-
-  return (data || [])
-    .filter((e) => e && e.name && e.name.includes("."))
-    .map((e) => ({
-      bucket,
-      path: joinPath(dirPath, e.name), // f.eks. "ai/1/fil.pdf"
-      source_type: prefix, // 'ai' eller 'master'
-    }));
-}
-
-async function downloadFile(supabase, bucket, path) {
-  const { data, error } = await supabase.storage.from(bucket).download(path);
-  if (error) throw new Error(`Storage download error @ ${bucket}/${path}: ${JSON.stringify(error)}`);
-  const arrbuf = await data.arrayBuffer();
-  return Buffer.from(arrbuf);
-}
-
-async function upsertChunkRows(supabase, rows) {
-  if (!rows.length) return { inserted: 0 };
-  const { error } = await supabase.from(TABLE_CHUNKS).upsert(rows, {
-    onConflict: "doc_id,chunk_index,source_type",
-  });
-  if (error) throw new Error(`DB upsert error: ${JSON.stringify(error)}`);
-  return { inserted: rows.length };
-}
-
-// Viktig: bruk vanlig select + limit(1) (ikke head:true) for pålitelighet
-async function alreadyChunked(supabase, docId, sourceType) {
-  const { data, error } = await supabase
-    .from(TABLE_CHUNKS)
-    .select("id", { count: "exact" })
-    .eq("doc_id", docId)
-    .eq("source_type", sourceType)
-    .limit(1);
-  if (error) throw new Error(`DB select error: ${JSON.stringify(error)}`);
-  return Array.isArray(data) && data.length > 0;
-}
-
-function inferDocIdFromPath(p) {
-  // Godtar ai eller master
-  const m = p.match(/^(?:ai|master)\/(\d+)\//);
-  return m ? parseInt(m[1], 10) : null;
-}
-
-// ---------- handler ----------
-export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    res.status(405).json({ ok: false, error: "Method not allowed" });
-    return;
+// --- Helpers ---
+function serviceClient() {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
   }
+  return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+}
 
-  const mode = (req.body?.mode || "all").toLowerCase();
-  const maxFiles = Math.min(req.body?.limit || MAX_FILES_PER_RUN, 1000);
+function approxTokenLen(str) {
+  // grovt: ~4 chars pr token
+  return Math.ceil((str || '').length / 4);
+}
 
+function chunkText(text, { maxTokens = 380, overlapTokens = 40 } = {}) {
+  const maxChars = maxTokens * 4;
+  const overlapChars = overlapTokens * 4;
+  const chunks = [];
+  let i = 0;
+  while (i < text.length) {
+    const end = Math.min(i + maxChars, text.length);
+    const slice = text.slice(i, end).trim();
+    if (slice) chunks.push(slice);
+    if (end >= text.length) break;
+    i = end - overlapChars; // overlap
+    if (i < 0) i = 0;
+  }
+  return chunks;
+}
+
+async function embedTexts(texts) {
+  // batchet, men for enkelhet: en og en (stabilt og trygt)
+  const out = [];
+  for (const input of texts) {
+    const r = await fetch('https://api.openai.com/v1/embeddings', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ model: EMBEDDING_MODEL, input })
+    });
+    if (!r.ok) {
+      const txt = await r.text();
+      throw new Error(`OpenAI embeddings feilet: ${r.status} ${txt}`);
+    }
+    const data = await r.json();
+    out.push(data.data[0].embedding);
+  }
+  return out;
+}
+
+async function listFiles(supabase, prefix) {
+  const { data, error } = await supabase.storage.from(BUCKET).list(prefix, { limit: 1000, sortBy: { column: 'name', order: 'asc' } });
+  if (error) throw error;
+  return (data || []).filter(f => !f.name.startsWith('.')); // dropp skjulte
+}
+
+async function downloadFile(supabase, path) {
+  const { data, error } = await supabase.storage.from(BUCKET).download(path);
+  if (error) throw error;
+  return data; // Blob
+}
+
+async function parseContent(blob, filename) {
+  const buff = Buffer.from(await blob.arrayBuffer());
+  const lower = filename.toLowerCase();
+  if (lower.endsWith('.pdf')) {
+    const parsed = await pdfParse(buff);
+    return parsed.text || '';
+  }
+  // default: tekst
+  return buff.toString('utf-8');
+}
+
+async function ensureIvfflatIndex(supabase) {
+  // Kjører trygg "CREATE INDEX IF NOT EXISTS" via RPC? Nei.
+  // Vi logger kun en påminnelse i responsen. Selve SQL må kjøres i Supabase.
+  // (Se SQL seksjonen i svaret mitt.)
+  return true;
+}
+
+export default async function handler(req, res) {
   try {
-    const supabase = getSupabaseServer();
-
-    // 1) Finn docId-mapper under ai/ og master/
-    const prefixDirs = {};
-    for (const prefix of PREFIXES) {
-      prefixDirs[prefix] = await listImmediateDirs(supabase, STORAGE_BUCKET, prefix);
+    if (req.method !== 'POST' && req.method !== 'GET') {
+      return res.status(405).json({ error: 'Method not allowed' });
     }
 
-    // 2) List alle filer
-    let work = [];
-    for (const prefix of PREFIXES) {
-      const docDirs = prefixDirs[prefix];
-      const filesPerDir = await Promise.all(
-        docDirs.map((d) => listFilesInDocDir(supabase, STORAGE_BUCKET, prefix, d))
-      );
-      work = work.concat(...filesPerDir);
+    if (!OPENAI_API_KEY) {
+      return res.status(400).json({ error: 'OPENAI_API_KEY mangler' });
     }
 
-    work.sort((a, b) => a.path.localeCompare(b.path));
+    const supabase = serviceClient();
 
-    // 3) Prosesser filer
-    const results = [];
-    let processed = 0;
+    const q = req.method === 'GET' ? req.query : req.body || {};
+    const mode = (q.mode || 'new').toLowerCase(); // 'new' | 'all'
+    const maxTokens = Number(q.maxTokens || 380);
+    const overlapTokens = Number(q.overlapTokens || 40);
 
-    for (const item of work) {
-      if (processed >= maxFiles) break;
+    const sources = ['ai', 'master'];
+    let processed = 0, skipped = 0, inserted = 0, embedded = 0;
+    const logs = [];
 
-      const docId = inferDocIdFromPath(item.path);
-      if (!docId) {
-        results.push({ ...item, skipped: true, reason: "Mangler docId i path" });
-        continue;
-      }
+    for (const source_type of sources) {
+      // Finn alle doc-Id mapper under documents/{source_type}/
+      const roots = await listFiles(supabase, `${source_type}`);
+      for (const r of roots) {
+        if (!r.name.match(/^\d+$/)) continue; // bare numeriske doc_id
+        const doc_id = Number(r.name);
+        const files = await listFiles(supabase, `${source_type}/${doc_id}`);
+        if (!files.length) continue;
 
-      if (mode === "new") {
-        const has = await alreadyChunked(supabase, docId, item.source_type);
-        if (has) {
-          results.push({ ...item, skipped: true, reason: "Allerede chunket (mode=new)" });
-          continue;
+        for (const f of files) {
+          const source_path = `${source_type}/${doc_id}/${f.name}`;
+          // Les fil
+          const blob = await downloadFile(supabase, source_path);
+          const text = await parseContent(blob, f.name);
+          if (!text?.trim()) {
+            logs.push(`Tom fil: ${source_path}`);
+            continue;
+          }
+
+          // Chunk
+          const chunks = chunkText(text, { maxTokens, overlapTokens });
+          if (!chunks.length) continue;
+
+          // Sjekk hva som finnes hvis mode=new
+          let existingIdx = new Set();
+          if (mode === 'new') {
+            const { data: existing, error: exErr } = await supabase
+              .from(TABLE)
+              .select('chunk_index')
+              .eq('doc_id', doc_id)
+              .eq('source_type', source_type)
+              .order('chunk_index', { ascending: true });
+            if (exErr) throw exErr;
+            (existing || []).forEach(row => existingIdx.add(row.chunk_index));
+          }
+
+          // For hvert chunk: insert hvis ny, ellers skip
+          for (let i = 0; i < chunks.length; i++) {
+            const content = chunks[i];
+            const token_estimate = approxTokenLen(content);
+
+            const isExisting = existingIdx.has(i);
+            if (mode === 'new' && isExisting) {
+              skipped++;
+              continue;
+            }
+
+            // Lag embedding
+            const [embedding] = await embedTexts([content]);
+            // Insert / upsert
+            const { data: up, error: upErr } = await supabase
+              .from(TABLE)
+              .upsert({
+                doc_id,
+                source_type,
+                chunk_index: i,
+                content,
+                token_estimate,
+                source_path,
+                embedding
+              }, { onConflict: 'doc_id,source_type,chunk_index' })
+              .select('id');
+            if (upErr) throw upErr;
+
+            processed++;
+            inserted += up?.length ? 1 : 0;
+            embedded++;
+          }
         }
       }
-
-      const fileBuf = await downloadFile(supabase, item.bucket, item.path);
-      const filename = item.path.split("/").pop() || "fil";
-      const chunks = await parseAndChunk(fileBuf, filename, {
-        maxTokens: 400,
-        overlapTokens: 80,
-      });
-
-      const rows = chunks.map((c) => ({
-        doc_id: docId,
-        source_type: item.source_type, // 'ai' | 'master'
-        chunk_index: c.index,
-        content: c.content,
-        token_estimate: c.token_estimate,
-        source_path: `${item.bucket}/${item.path}`,
-      }));
-
-      await upsertChunkRows(supabase, rows);
-      results.push({ ...item, ok: true, chunks: rows.length });
-      processed += 1;
     }
 
-    const skipped = results.filter((r) => r.skipped).length;
+    await ensureIvfflatIndex(supabase);
 
-    res.status(200).json({
+    return res.status(200).json({
       ok: true,
       mode,
       processed,
-      totalSeen: work.length,
-      maxFiles,
+      inserted,
       skipped,
-      bucketInfo: {
-        bucket: STORAGE_BUCKET,
-        aiTopLevelDirs: prefixDirs["ai"]?.length || 0,
-        masterTopLevelDirs: prefixDirs["master"]?.length || 0,
-      },
-      results,
-      hint:
-        work.length === 0
-          ? "Fant ingen filer. Sjekk at filer ligger i Supabase Storage under 'documents/ai/<docId>/<fil>' og 'documents/master/<docId>/<fil>'."
-          : skipped
-          ? "Mode=new: noen filer ble hoppet over."
-          : "Bruk mode=new for å hoppe over allerede prosesserte dokumenter.",
+      embedded,
+      note: 'Kjør SQL i Supabase for IVFFLAT-indeks og match-funksjonen (se svaret mitt).',
+      logs
     });
-  } catch (err) {
-    res.status(500).json({
-      ok: false,
-      error: {
-        message: err?.message || String(err),
-        name: err?.name || "Error",
-        stack: err?.stack || null,
-      },
-    });
+
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ ok: false, error: String(e?.message || e) });
   }
 }
+
+// Next.js pages API kjører i Node-miljø by default.
+// Ikke spesifiser Edge; pdf-parse trenger Node.
+export const config = {
+  api: {
+    bodyParser: { sizeLimit: '20mb' }
+  }
+};
