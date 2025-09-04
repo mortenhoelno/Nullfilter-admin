@@ -65,13 +65,15 @@ async function upsertChunkRows(supabase, rows) {
 }
 
 async function alreadyChunked(supabase, docId, sourceType) {
-  const { data, error } = await supabase
+  // Viktig: med head:true er data = null. Bruk count.
+  const { count, error } = await supabase
     .from(TABLE_CHUNKS)
-    .select("id", { head: true, count: "exact" })
+    .select("id", { count: "exact", head: true })
     .eq("doc_id", docId)
     .eq("source_type", sourceType);
+
   if (error) throw new Error(`DB select error: ${JSON.stringify(error)}`);
-  return (data && data.length > 0) || false;
+  return (count ?? 0) > 0;
 }
 
 function inferDocIdFromPath(p) {
@@ -153,12 +155,15 @@ export default async function handler(req, res) {
       processed += 1;
     }
 
+    const skipped = results.filter((r) => r.skipped).length;
+
     res.status(200).json({
       ok: true,
       mode,
       processed,
       totalSeen: work.length,
       maxFiles,
+      skipped,
       bucketInfo: {
         bucket: STORAGE_BUCKET,
         aiTopLevelDirs: prefixDirs["ai"]?.length || 0,
@@ -168,6 +173,8 @@ export default async function handler(req, res) {
       hint:
         work.length === 0
           ? "Fant ingen filer. Sjekk at filer ligger i Supabase Storage under 'documents/ai/<docId>/<fil>' og 'documents/master/<docId>/<fil>'."
+          : skipped
+          ? "Mode=new: noen filer ble hoppet over."
           : "Bruk mode=new for å hoppe over allerede prosesserte dokumenter.",
     });
   } catch (err) {
