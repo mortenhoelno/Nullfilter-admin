@@ -1,7 +1,11 @@
-// FERDIG VERSJON: pages/chat-nullfilter/index.js med RAG og AI-svar
+// FERDIG VERSJON: pages/chat-nullfilter/index.js med RAG, AI-svar og ventemeldinger
 
 import { useState, useEffect } from "react";
-import { createConversation, saveMessage, getConversationByEmail } from "../../utils/storage";
+import {
+  createConversation,
+  saveMessage,
+  getConversationByEmail,
+} from "../../utils/storage";
 import { getRagContext } from "../../utils/rag";
 import ChatEngine from "../../components/ChatEngine";
 import personaConfig from "../../config/personaConfig";
@@ -19,6 +23,7 @@ export default function NullFilterChat() {
   const [messages, setMessages] = useState([
     { role: "assistant", content: config.intro },
   ]);
+  const [loading, setLoading] = useState(false); // 🆕 For ventemelding
 
   useEffect(() => {
     const loadConversation = async () => {
@@ -47,6 +52,9 @@ export default function NullFilterChat() {
     setChatInput("");
     if (conversation) await saveMessage(conversation.id, userMessage);
 
+    // Sett loading true → viser ventemelding
+    setLoading(true);
+
     // 🔍 Hent RAG-kontekst
     const { contextText } = await getRagContext(toSend);
 
@@ -63,20 +71,20 @@ ${ragBlock}
 
     const fullMessages = [
       { role: "system", content: systemPrompt },
-      { role: "user", content: toSend }
+      { role: "user", content: toSend },
     ];
 
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: fullMessages, personaId: config.slug })
+        body: JSON.stringify({ messages: fullMessages, personaId: config.slug }),
       });
 
       const data = await res.json();
       const reply = {
         role: "assistant",
-        content: data.reply || "Beklager, jeg klarte ikke svare akkurat nå."
+        content: data.reply || "Beklager, jeg klarte ikke svare akkurat nå.",
       };
 
       setMessages((prev) => [...prev, reply]);
@@ -87,9 +95,12 @@ ${ragBlock}
         ...prev,
         {
           role: "assistant",
-          content: "En feil oppsto under samtalen. Prøv igjen senere."
-        }
+          content: "En feil oppsto under samtalen. Prøv igjen senere.",
+        },
       ]);
+    } finally {
+      // Ferdig → skjul ventemelding
+      setLoading(false);
     }
   };
 
@@ -126,11 +137,21 @@ ${ragBlock}
         <div className="space-y-2">
           <p className="font-medium">Hvordan vil du bruke chatboten?</p>
           <label className="flex items-center gap-2">
-            <input type="radio" name="memory" checked={!useMemory} onChange={() => setUseMemory(false)} />
+            <input
+              type="radio"
+              name="memory"
+              checked={!useMemory}
+              onChange={() => setUseMemory(false)}
+            />
             Anonym (ingenting lagres)
           </label>
           <label className="flex items-center gap-2">
-            <input type="radio" name="memory" checked={useMemory} onChange={() => setUseMemory(true)} />
+            <input
+              type="radio"
+              name="memory"
+              checked={useMemory}
+              onChange={() => setUseMemory(true)}
+            />
             Husk meg og tidligere samtaler (bruk e-post)
           </label>
 
@@ -179,6 +200,7 @@ ${ragBlock}
           setInput={setChatInput}
           onSend={sendMessage}
           themeColor={config.themeColor}
+          loading={loading} // 🆕 viser ventemeldinger
         />
       </div>
     </div>
