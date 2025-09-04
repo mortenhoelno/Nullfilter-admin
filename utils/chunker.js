@@ -2,6 +2,7 @@
 
 import fs from "fs/promises";
 import path from "path";
+import pdfParse from "pdf-parse";
 
 // 💡 Brukes til overlap
 function takeTailByTokens(text, tokens) {
@@ -9,7 +10,6 @@ function takeTailByTokens(text, tokens) {
   return text.slice(-approxChars);
 }
 
-// 🔃 Rydder opp i tekstformatet
 export function normalizeText(str) {
   return str
     .replace(/\r\n/g, '\n')
@@ -19,12 +19,11 @@ export function normalizeText(str) {
     .trim();
 }
 
-// 🔢 Estimerer antall tokens basert på tegn
 function estimateTokens(str) {
   return Math.ceil(str.length / 4);
 }
 
-// ✂️ Selve chunkeren – kutter tekst i håndterbare biter
+// ✂️ Selve chunkeren
 export function chunkText(
   rawText,
   {
@@ -85,7 +84,6 @@ export function chunkText(
   for (const para of paragraphs) {
     pushWithChecks(para);
   }
-
   flush();
 
   if (overlapTokens > 0 && chunks.length > 1) {
@@ -95,7 +93,8 @@ export function chunkText(
         overlapped.push(chunks[i]);
         continue;
       }
-      const tail = takeTailByTokens(chunks[i - 1], overlapTokens);
+      const prev = chunks[i - 1];
+      const tail = takeTailByTokens(prev, overlapTokens);
       overlapped.push(tail + '\n' + chunks[i]);
     }
     return overlapped;
@@ -104,7 +103,7 @@ export function chunkText(
   return chunks;
 }
 
-// 📂 Leser og chunker både ai/ og master/ filer for gitt docId
+// 📂 Leser og chunker både ai/ og master/
 export async function loadAndChunkFromFileSystem(docId, baseDir = "public/docs") {
   const chunks = [];
   const docFolders = ["ai", "master"];
@@ -121,12 +120,26 @@ export async function loadAndChunkFromFileSystem(docId, baseDir = "public/docs")
     }
 
     for (const filename of files) {
-      if (!filename.endsWith(".txt") && !filename.endsWith(".md")) continue;
+      const ext = path.extname(filename).toLowerCase();
+      if (![".txt", ".md", ".pdf"].includes(ext)) continue;
 
       const filePath = path.join(dirPath, filename);
-      const raw = await fs.readFile(filePath, "utf-8");
-      const chunkList = chunkText(raw);
+      let raw = "";
 
+      try {
+        if (ext === ".pdf") {
+          const buffer = await fs.readFile(filePath);
+          const data = await pdfParse(buffer);
+          raw = data.text;
+        } else {
+          raw = await fs.readFile(filePath, "utf-8");
+        }
+      } catch (err) {
+        console.error(`❌ Feil ved lesing av ${filename}`, err);
+        continue;
+      }
+
+      const chunkList = chunkText(raw);
       chunkList.forEach((content, i) => {
         chunks.push({
           doc_id: Number(docId),
