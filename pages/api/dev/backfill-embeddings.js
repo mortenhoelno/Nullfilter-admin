@@ -1,12 +1,13 @@
-// pages/api/dev/backfill-embeddings.js
-// Oppdaterer public.chunks der embedding er NULL.
-// Kjør i små batcher for å unngå timeouts.
-
+// pages/api/dev/backfill-embeddings.js — FERDIG (rag_chunks)
 import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+
+const TABLE = "rag_chunks";
+const MODEL = "text-embedding-3-small";
+const BATCH = 200;
 
 function sb() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
@@ -18,19 +19,10 @@ function sb() {
 async function embedBatch(texts) {
   const r = await fetch("https://api.openai.com/v1/embeddings", {
     method: "POST",
-    headers: {
-      "Authorization": `Bearer ${OPENAI_API_KEY}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      model: "text-embedding-3-small",
-      input: texts
-    })
+    headers: { "Authorization": `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: MODEL, input: texts })
   });
-  if (!r.ok) {
-    const t = await r.text();
-    throw new Error(`OpenAI embeddings feilet: ${r.status} ${t}`);
-  }
+  if (!r.ok) throw new Error(`OpenAI embeddings feilet: ${r.status}`);
   const j = await r.json();
   return j.data.map(d => d.embedding);
 }
@@ -41,48 +33,25 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Only POST allowed" });
   }
   try {
-    if (!OPENAI_API_KEY) throw new Error("Mangler OPENAI_API_KEY");
-
-    const batchSize = Number(req.query.batch || 32); // justerbar
     const client = sb();
-
-    // 1) Hent en liten batch uten embedding
-    const { data: rows, error: selErr } = await client
-      .from("chunks")
-      .select("doc_id, chunk_index, content")
+    const { data: rows, error } = await client
+      .from(TABLE)
+      .select("id, content")
       .is("embedding", null)
-      .limit(batchSize);
+      .limit(BATCH);
 
-    if (selErr) throw selErr;
-    if (!rows || rows.length === 0) {
-      return res.status(200).json({ ok: true, updated: 0, done: true });
-    }
+    if (error) throw error;
+    if (!rows?.length) return res.status(200).json({ ok: true, updated: 0, note: "Ingenting å backfille" });
 
-    // 2) Lag embeddings
-    const texts = rows.map(r => String(r.content || ""));
-    const embeddings = await embedBatch(texts);
+    const embeddings = await embedBatch(rows.map(r => r.content || ""));
+    const updates = rows.map((r, i) => ({ id: r.id, embedding: embeddings[i] }));
 
-    // 3) Oppdater per rad
-    // NB: vi identifiserer rad med (doc_id, chunk_index) som du nå har UNIQUE på.
-    const updates = rows.map((r, i) => ({
-      doc_id: r.doc_id,
-      chunk_index: r.chunk_index,
-      embedding: embeddings[i]
-    }));
+    const { error: upErr } = await client.from(TABLE).upsert(updates);
+    if (upErr) throw upErr;
 
-    // Supabase har ikke "bulk update by PK" i én operasjon, så vi kjører én og én:
-    for (const u of updates) {
-      const { error: upErr } = await client
-        .from("chunks")
-        .update({ embedding: u.embedding })
-        .eq("doc_id", u.doc_id)
-        .eq("chunk_index", u.chunk_index);
-      if (upErr) throw upErr;
-    }
-
-    return res.status(200).json({ ok: true, updated: updates.length, done: false });
-  } catch (e) {
-    console.error("/api/dev/backfill-embeddings error:", e);
-    return res.status(500).json({ ok: false, error: String(e?.message || e) });
+    return res.status(200).json({ ok: true, updated: updates.length });
+  } catch (err) {
+    console.error("[/api/dev/backfill-embeddings] error:", err);
+    return res.status(500).json({ ok: false, error: String(err?.message || err) });
   }
 }
