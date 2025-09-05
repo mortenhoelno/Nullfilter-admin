@@ -35,3 +35,4 @@ export async function addDropdownValue(type: string, value: string): Promise<voi
     console.error(`Feil ved lagring av dropdown_value (type=${type}, value=${value}):`, error);
   }
 }
+
