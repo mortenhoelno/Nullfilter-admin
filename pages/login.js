@@ -1,64 +1,89 @@
-// pages/login.js
-import { useState } from "react";
-import { supabase } from "../utils/supabaseClient";
+// pages/login.js — FERDIG VERSJON (BYTT UT)
+import { useState, useEffect } from "react";
+import { useRouter } from "next/router";
+import { supabaseBrowser, authEnabled } from "../utils/supabaseClient";
 
 export default function LoginPage() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!authEnabled()) {
+      // Auth slått av -> ingen vits å være her
+      router.replace("/admin");
+    }
+  }, [router]);
 
   async function handleLogin(e) {
     e.preventDefault();
+    setErr("");
     setLoading(true);
-    setError("");
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      setError(error.message);
-    } else {
-      window.location.href = "/admin"; // redirect til admin
+    try {
+      const supabase = supabaseBrowser();
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      router.replace("/admin");
+    } catch (e) {
+      setErr(e.message || "Kunne ikke logge inn.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
 
   async function handleResetPassword() {
+    setErr("");
     if (!email) {
-      setError("Skriv inn e-post først.");
+      setErr("Skriv inn e-post først.");
       return;
     }
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: window.location.origin + "/reset-password",
-    });
-    if (error) setError(error.message);
-    else alert("Sjekk e-posten din for instruksjoner.");
+    try {
+      const supabase = supabaseBrowser();
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/login`,
+      });
+      if (error) throw error;
+      alert("Passord-epost sendt (hvis adressen finnes).");
+    } catch (e) {
+      setErr(e.message || "Feil ved sending av reset-epost.");
+    }
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="bg-white p-8 rounded shadow-md w-full max-w-sm">
-        <h1 className="text-2xl font-bold mb-4">Logg inn</h1>
+    <div className="min-h-screen grid place-items-center bg-gray-50">
+      <div className="w-full max-w-sm bg-white p-6 rounded-2xl shadow">
+        <h1 className="text-2xl font-bold mb-2">Logg inn</h1>
+        <p className="text-sm text-gray-600 mb-6">
+          Bare husk: riktig passord &gt; feil passord. (Rakettforskning, jeg vet.)
+        </p>
         <form onSubmit={handleLogin} className="space-y-4">
           <input
             type="email"
+            className="w-full rounded-xl border p-3"
             placeholder="E-post"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full border px-3 py-2 rounded"
+            required
+            autoComplete="email"
           />
           <input
             type="password"
+            className="w-full rounded-xl border p-3"
             placeholder="Passord"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full border px-3 py-2 rounded"
+            required
+            autoComplete="current-password"
           />
-          {error && <p className="text-red-500 text-sm">{error}</p>}
+          {err ? <div className="text-sm text-red-600">{err}</div> : null}
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700"
+            className="w-full rounded-xl border p-3 font-semibold hover:bg-gray-100"
           >
-            {loading ? "Logger inn..." : "Logg inn"}
+            {loading ? "Logger inn…" : "Logg inn"}
           </button>
         </form>
         <button
