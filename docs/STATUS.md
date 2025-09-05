@@ -1,4 +1,45 @@
+# STATUS – Chatbot-prosjektet 🚀  
+**Dato:** 05.09.2025  
+**Versjon:** v0.2.1 – Apehjernen tar notater 📓🐒  
 
+---
+
+## Siste endringer
+- Ny seksjon: **Beslutninger & Valg** – samlet oversikt over faktiske valg vi har tatt  
+- Ny seksjon: **Ideer på pause (Fremtidslogg)** – egen logg for idéer som er parkert  
+- STATUS.md fungerer nå både som statusrapport og felles hukommelse  
+
+---
+
+## 1. Filstruktur (nivå 1–2 + viktige filer)
+
+├─ pages/
+│ ├─ index.js # Hovedside, lenke til admin
+│ ├─ admin.js # Admin-grensesnitt for dokumentopplasting
+│ ├─ chat-nullfilter/
+│ │ └─ index.js # NullFilter-chatbot (mental helse)
+│ ├─ chat-keepertrening/
+│ │ └─ index.js # Keepertrening-chatbot (idrett)
+│ └─ api/
+│ ├─ chat.js # Chat-endepunkt (OpenAI GPT-5)
+│ └─ rag/
+│ ├─ search.js # RAG-søk i rag_chunks
+│ ├─ ingest.js # Chunking & lagring i rag_chunks
+│ ├─ status.js # Status for dokumenter & chunks
+│ ├─ pinned.js # (Oppdatert → bruker rag_chunks)
+│ └─ ...
+│
+├─ utils/
+│ ├─ docs.js # Dokumenthåndtering (upsert, sync, list)
+│ ├─ upload.js # Opplasting av dokumenter
+│ ├─ chunker.js # Chunking av tekst/PDF → rag_chunks
+│ └─ supabase.js # Supabase-klient
+│
+├─ config/
+│ └─ personaConfig.js # Persona-config (avatar, farger, intro per bot)
+│
+├─ public/ # Statisk innhold (bilder, avatarer, osv.)
+└─ package.json
 ---
 
 ## 2. Databaseoversikt
