@@ -1,7 +1,7 @@
-
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import withAuth from "../components/withAuth";
 
 import {
   upsertDocument,
@@ -15,19 +15,17 @@ import {
 
 import { uploadAndFlag } from "../utils/upload"; // ✅ LEGG TIL DENNE
 
-
-export default function AdminPage() {
+function AdminPage() {
   const [title, setTitle] = useState("");
-const [category, setCategory] = useState("");
-const [theme, setTheme] = useState("");
+  const [category, setCategory] = useState("");
+  const [theme, setTheme] = useState("");
   const [existingTitles, setExistingTitles] = useState<string[]>([]);
-const [existingCategories, setExistingCategories] = useState<string[]>([]);
-const [existingThemes, setExistingThemes] = useState<string[]>([]);
+  const [existingCategories, setExistingCategories] = useState<string[]>([]);
+  const [existingThemes, setExistingThemes] = useState<string[]>([]);
 
-const [customTitle, setCustomTitle] = useState("");
-const [customCategory, setCustomCategory] = useState("");
-const [customTheme, setCustomTheme] = useState("");
-
+  const [customTitle, setCustomTitle] = useState("");
+  const [customCategory, setCustomCategory] = useState("");
+  const [customTheme, setCustomTheme] = useState("");
 
   const [selectedDocId, setSelectedDocId] = useState<number | null>(null);
   const [aiFile, setAiFile] = useState<File | null>(null);
@@ -81,10 +79,9 @@ const [customTheme, setCustomTheme] = useState("");
       setRows(groupByDocNumber(docs));
       const unique = <T,>(arr: T[]): T[] => Array.from(new Set(arr)).filter((v) => !!v);
 
-setExistingTitles(unique(docs.map((d) => d.title)));
-setExistingCategories(unique(docs.map((d) => d.category ?? "").filter(Boolean)));
-setExistingThemes(unique(docs.map((d) => d.theme ?? "").filter(Boolean)));
-
+      setExistingTitles(unique(docs.map((d) => d.title)));
+      setExistingCategories(unique(docs.map((d) => d.category ?? "").filter(Boolean)));
+      setExistingThemes(unique(docs.map((d) => d.theme ?? "").filter(Boolean)));
     } catch (e: any) {
       console.error(e);
       setListError(e?.message ?? "Kunne ikke hente dokumenter");
@@ -199,11 +196,10 @@ setExistingThemes(unique(docs.map((d) => d.theme ?? "").filter(Boolean)));
                 <td>{ai ? "✅" : "🔲"}</td>
                 <td>{master ? "✅" : "🔲"}</td>
                 <td style={{ maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-  <small title={sourcePath}>
-    {sourcePath ? sourcePath.split("/").pop() : "—"}
-  </small>
-</td>
-
+                  <small title={sourcePath}>
+                    {sourcePath ? sourcePath.split("/").pop() : "—"}
+                  </small>
+                </td>
                 <td>{createdAt ? new Date(createdAt).toLocaleString() : "—"}</td>
               </tr>
             );
@@ -216,103 +212,102 @@ setExistingThemes(unique(docs.map((d) => d.theme ?? "").filter(Boolean)));
       <p style={{ marginTop: 16 }}>Velg dokumentnummer og last opp AI- og/eller Master-dokument.</p>
 
       <div style={{ display: "flex", gap: 20, margin: "20px 0", flexWrap: "wrap", alignItems: "flex-end" }}>
-  <div>
-    <label>
-      <strong>1. Dokumentnummer:</strong><br />
-      <select
-        onChange={(e) => setSelectedDocId(e.target.value ? parseInt(e.target.value, 10) : null)}
-        value={selectedDocId ?? ""}
-      >
-        <option value="" disabled>Velg dokument…</option>
-        {docCatalog.map((doc) => (
-          <option key={doc.id} value={doc.id}>
-            #{doc.id} – {doc.title}
-          </option>
-        ))}
-      </select>
-    </label>
-  </div>
+        <div>
+          <label>
+            <strong>1. Dokumentnummer:</strong><br />
+            <select
+              onChange={(e) => setSelectedDocId(e.target.value ? parseInt(e.target.value, 10) : null)}
+              value={selectedDocId ?? ""}
+            >
+              <option value="" disabled>Velg dokument…</option>
+              {docCatalog.map((doc) => (
+                <option key={doc.id} value={doc.id}>
+                  #{doc.id} – {doc.title}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
 
-<div>
-  <label><strong>Tittel:</strong><br />
-    <select
-      value={title}
-      onChange={(e) => setTitle(e.target.value)}
-      style={{ width: 250 }}
-    >
-      <option value="">Velg eksisterende tittel…</option>
-      {existingTitles.map((t, i) => (
-        <option key={i} value={t}>{t}</option>
-      ))}
-    </select>
-    <br />
-    <input
-      type="text"
-      value={customTitle}
-      onChange={(e) => {
-        setCustomTitle(e.target.value);
-        setTitle(e.target.value);
-      }}
-      placeholder="Eller skriv ny tittel"
-      style={{ width: 250, marginTop: 6 }}
-    />
-  </label>
-</div>
+        <div>
+          <label><strong>Tittel:</strong><br />
+            <select
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              style={{ width: 250 }}
+            >
+              <option value="">Velg eksisterende tittel…</option>
+              {existingTitles.map((t, i) => (
+                <option key={i} value={t}>{t}</option>
+              ))}
+            </select>
+            <br />
+            <input
+              type="text"
+              value={customTitle}
+              onChange={(e) => {
+                setCustomTitle(e.target.value);
+                setTitle(e.target.value);
+              }}
+              placeholder="Eller skriv ny tittel"
+              style={{ width: 250, marginTop: 6 }}
+            />
+          </label>
+        </div>
 
-<div>
-  <label><strong>Kategori:</strong><br />
-    <select
-      value={category}
-      onChange={(e) => setCategory(e.target.value)}
-      style={{ width: 150 }}
-    >
-      <option value="">Velg kategori…</option>
-      {existingCategories.map((c, i) => (
-        <option key={i} value={c}>{c}</option>
-      ))}
-    </select>
-    <br />
-    <input
-      type="text"
-      value={customCategory}
-      onChange={(e) => {
-        setCustomCategory(e.target.value);
-        setCategory(e.target.value);
-      }}
-      placeholder="Eller skriv ny kategori"
-      style={{ width: 150, marginTop: 6 }}
-    />
-  </label>
-</div>
+        <div>
+          <label><strong>Kategori:</strong><br />
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              style={{ width: 150 }}
+            >
+              <option value="">Velg kategori…</option>
+              {existingCategories.map((c, i) => (
+                <option key={i} value={c}>{c}</option>
+              ))}
+            </select>
+            <br />
+            <input
+              type="text"
+              value={customCategory}
+              onChange={(e) => {
+                setCustomCategory(e.target.value);
+                setCategory(e.target.value);
+              }}
+              placeholder="Eller skriv ny kategori"
+              style={{ width: 150, marginTop: 6 }}
+            />
+          </label>
+        </div>
 
-<div>
-  <label><strong>Tema:</strong><br />
-    <select
-      value={theme}
-      onChange={(e) => setTheme(e.target.value)}
-      style={{ width: 200 }}
-    >
-      <option value="">Velg tema…</option>
-      {existingThemes.map((t, i) => (
-        <option key={i} value={t}>{t}</option>
-      ))}
-    </select>
-    <br />
-    <input
-      type="text"
-      value={customTheme}
-      onChange={(e) => {
-        setCustomTheme(e.target.value);
-        setTheme(e.target.value);
-      }}
-      placeholder="Eller skriv nytt tema"
-      style={{ width: 200, marginTop: 6 }}
-    />
-  </label>
-</div>
-        
+        <div>
+          <label><strong>Tema:</strong><br />
+            <select
+              value={theme}
+              onChange={(e) => setTheme(e.target.value)}
+              style={{ width: 200 }}
+            >
+              <option value="">Velg tema…</option>
+              {existingThemes.map((t, i) => (
+                <option key={i} value={t}>{t}</option>
+              ))}
+            </select>
+            <br />
+            <input
+              type="text"
+              value={customTheme}
+              onChange={(e) => {
+                setCustomTheme(e.target.value);
+                setTheme(e.target.value);
+              }}
+              placeholder="Eller skriv nytt tema"
+              style={{ width: 200, marginTop: 6 }}
+            />
+          </label>
+        </div>
+      </div>
 
-</div>
       <div style={{ margin: "20px 0" }}>
         <label>
           <strong>2. AI-dokument:</strong>
@@ -346,3 +341,5 @@ setExistingThemes(unique(docs.map((d) => d.theme ?? "").filter(Boolean)));
     </div>
   );
 }
+
+export default withAuth(AdminPage);
