@@ -1,8 +1,17 @@
 // components/ChatEngine.js — FERDIG VERSJON
-// Meldingsmotor med ventemeldinger (uten boble, fade-in/out, bokstav-for-bokstav typing, typing dots)
+// Meldingsmotor med ventemeldinger (pulsende fade, plassreservering)
 
 import { useRef, useEffect, useState } from "react";
 
+/**
+ * @param {Object} props
+ * @param {Array} props.messages
+ * @param {string} props.input
+ * @param {function} props.setInput
+ * @param {function} props.onSend
+ * @param {boolean} [props.loading] - true når API-kall pågår
+ * @param {string} [props.themeColor] - f.eks. "blue" eller "green"
+ */
 export default function ChatEngine({
   messages,
   input,
@@ -13,19 +22,14 @@ export default function ChatEngine({
 }) {
   const listRef = useRef(null);
   const [waitingMessage, setWaitingMessage] = useState(null);
-  const [displayedText, setDisplayedText] = useState(""); // typing-effekt
-  const [isFadingOut, setIsFadingOut] = useState(false);
 
-  // auto-scroll bare når brukeren skriver (ikke på botsvar)
   useEffect(() => {
-    if (messages.length > 0 && messages[messages.length - 1].role === "user") {
-      if (listRef.current) {
-        listRef.current.scrollTop = listRef.current.scrollHeight - 150;
-      }
+    if (listRef.current) {
+      listRef.current.scrollTop = listRef.current.scrollHeight;
     }
-  }, [messages]);
+  }, [messages, waitingMessage]);
 
-  // === bare 10 ventemeldinger nå (for rask build) ===
+  // === Ventemeldinger (kort liste, du kan utvide) ===
   const waitMessages = [
     "Jeg samler de beste innsiktene for deg... ⏳",
     "Jobber med å finne det perfekte svaret 🔍",
@@ -39,28 +43,14 @@ export default function ChatEngine({
     "Utarbeider et gjennomtenkt svar til deg ⚡",
   ];
 
-  // Når loading starter → velg melding
+  // Velg tilfeldig ventemelding når loading starter
   useEffect(() => {
     if (loading) {
       const msg = waitMessages[Math.floor(Math.random() * waitMessages.length)];
       setWaitingMessage(msg);
-      setDisplayedText("");
-      setIsFadingOut(false);
-
-      let i = 0;
-      const interval = setInterval(() => {
-        i++;
-        setDisplayedText(msg.slice(0, i)); // bokstav for bokstav
-        if (i >= msg.length) clearInterval(interval);
-      }, 40);
-      return () => clearInterval(interval);
-    } else if (waitingMessage) {
-      // fade ut når loading stopper
-      setIsFadingOut(true);
-      const t = setTimeout(() => {
-        setWaitingMessage(null);
-        setIsFadingOut(false);
-      }, 800); // 0.8s fade-out
+    } else {
+      // liten delay for smooth overgang
+      const t = setTimeout(() => setWaitingMessage(null), 400);
       return () => clearTimeout(t);
     }
   }, [loading]);
@@ -69,12 +59,15 @@ export default function ChatEngine({
     blue: {
       user: "bg-blue-100",
       button: "bg-blue-600 hover:bg-blue-700",
+      text: "text-blue-800",
     },
     green: {
       user: "bg-green-100",
       button: "bg-green-600 hover:bg-green-700",
+      text: "text-green-800",
     },
   };
+
   const theme = colorMap[themeColor] || colorMap.blue;
 
   return (
@@ -100,18 +93,15 @@ export default function ChatEngine({
           </div>
         ))}
 
-        {/* Ventemelding med fade-in/out, typing + dots */}
+        {/* Ventemelding som fade-pulser mens vi venter */}
         {waitingMessage && (
-          <div className="flex justify-center">
+          <div className="flex justify-start">
             <div
               className={`
-                text-sm italic text-gray-500
-                transition-opacity duration-800
-                ${isFadingOut ? "opacity-0" : "opacity-80"}
+                text-sm italic text-gray-500 animate-pulseFade
               `}
             >
-              {displayedText}
-              <span className="typing-dots ml-1" />
+              {waitingMessage}
             </div>
           </div>
         )}
@@ -136,21 +126,21 @@ export default function ChatEngine({
         </button>
       </div>
 
-      {/* CSS for fade + dots */}
+      {/* CSS for fade/pulse animasjon */}
       <style jsx>{`
-        @keyframes blink {
-          0%,
-          80%,
-          100% {
-            opacity: 0;
+        @keyframes pulseFade {
+          0% {
+            opacity: 0.3;
           }
-          40% {
-            opacity: 1;
+          50% {
+            opacity: 0.9;
+          }
+          100% {
+            opacity: 0.3;
           }
         }
-        .typing-dots::after {
-          content: "…";
-          animation: blink 1.2s infinite;
+        .animate-pulseFade {
+          animation: pulseFade 1.8s ease-in-out infinite;
         }
       `}</style>
     </>
