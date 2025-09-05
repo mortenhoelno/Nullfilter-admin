@@ -1,67 +1,73 @@
-// pages/login.js — ferdig versjon
+// pages/login.js
 import { useState } from "react";
-import { useRouter } from "next/router";
-import { supabase, signIn } from "../utils/auth";
+import { supabase } from "../utils/supabaseClient";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState(null);
-  const router = useRouter();
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
   async function handleLogin(e) {
     e.preventDefault();
-    try {
-      const user = await signIn(email, password);
-
-      // Hent profil for å sjekke rolle
-      const { data: profile, error: profileError } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", user.id)
-        .single();
-
-      if (profileError) throw profileError;
-
-      if (profile?.role === "admin") {
-        router.push("/admin");
-      } else {
-        router.push("/chat-nullfilter");
-      }
-    } catch (err) {
-      setError(err.message);
+    setLoading(true);
+    setError("");
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      setError(error.message);
+    } else {
+      window.location.href = "/admin"; // redirect til admin
     }
+    setLoading(false);
+  }
+
+  async function handleResetPassword() {
+    if (!email) {
+      setError("Skriv inn e-post først.");
+      return;
+    }
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + "/reset-password",
+    });
+    if (error) setError(error.message);
+    else alert("Sjekk e-posten din for instruksjoner.");
   }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <form
-        onSubmit={handleLogin}
-        className="bg-white shadow-md rounded px-8 pt-6 pb-8 w-full max-w-sm"
-      >
+      <div className="bg-white p-8 rounded shadow-md w-full max-w-sm">
         <h1 className="text-2xl font-bold mb-4">Logg inn</h1>
-        {error && <p className="text-red-500 text-sm mb-2">{error}</p>}
-        <input
-          type="email"
-          placeholder="E-post"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="w-full mb-3 px-3 py-2 border rounded"
-        />
-        <input
-          type="password"
-          placeholder="Passord"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="w-full mb-3 px-3 py-2 border rounded"
-        />
+        <form onSubmit={handleLogin} className="space-y-4">
+          <input
+            type="email"
+            placeholder="E-post"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="w-full border px-3 py-2 rounded"
+          />
+          <input
+            type="password"
+            placeholder="Passord"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-full border px-3 py-2 rounded"
+          />
+          {error && <p className="text-red-500 text-sm">{error}</p>}
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700"
+          >
+            {loading ? "Logger inn..." : "Logg inn"}
+          </button>
+        </form>
         <button
-          type="submit"
-          className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700"
+          onClick={handleResetPassword}
+          className="mt-4 text-sm text-blue-600 hover:underline"
         >
-          Logg inn
+          Glemt passord?
         </button>
-      </form>
+      </div>
     </div>
   );
 }
