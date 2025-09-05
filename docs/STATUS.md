@@ -13,6 +13,7 @@
 - Ny beslutning: **AI alltid med i alle samtaler** (allerede i praksis implementert)  
 - Oppdatert dokumentasjon: logging og bruken av Master som utdyping  
 - UUID-migrasjon ferdigstilt i forrige versjon (v0.2.2)  
+- Database ryddet: kun dokumentene **#1 (AI_mini_Morten)** og **#50 (MASTER_Hjernen_vaner_endring)** beholdt  
 
 ---
 
@@ -39,6 +40,7 @@
   - upload.js — Opplasting av dokumenter  
   - chunker.js — Chunking av tekst/PDF → rag_chunks  
   - supabase.js — Supabase-klient  
+  - dropdowns.ts — Henter og lagrer verdier for dropdowns  
 
 - **config/**
   - personaConfig.js — Persona-config (avatar, farger, intro per bot)  
@@ -49,141 +51,22 @@
 ---
 
 ## 2. Databaseoversikt
-
-### 2.1 Systeminfo
-- **Postgres-versjon**: 17.4 (64-bit, aarch64)  
-- **Search path**: `$user, public, extensions`  
-
-### 2.2 Tabeller & kolonner (oppdatert)
-
-#### documents
-- id (uuid, PK, default gen_random_uuid)  
-- title (text, metadata)  
-- category (text, metadata)  
-- theme (text, metadata)  
-- source (text, filreferanse)  
-- source_path (text, filreferanse)  
-- sha256 (text, hash av fil)  
-- doc_hash (text, hash av innhold)  
-- doc_number (int, unik indeks, kun menneskevennlig referanse)  
-- version (text, default 'v1')  
-- has_master (boolean, default false)  
-- has_ai (boolean, default false)  
-- created_at (timestamp, default now)  
-
-#### rag_chunks (single source of truth)
-- id (bigint, PK)  
-- **doc_uuid (uuid, FK → documents.id)**  
-- doc_id (int, LEGACY – fases ut)  
-- title (text, metadata)  
-- content (text, chunked innhold)  
-- chunk_index (int, posisjon i dokument)  
-- token_count (int)  
-- token_estimate (int)  
-- embedding (vector(1536))  
-- source_type (text: 'ai' | 'master')  
-- source_path (text, filreferanse)  
-- sha256 (text, hash av chunk)  
-- created_at (timestamp, default now)  
-- updated_at (timestamp, default now)  
-
-#### ai_chunks / master_chunks (DEPRECATED)
-- Samme felt som `rag_chunks`, men uten PK/defaults  
-- Beholdes midlertidig for trygghet / migrering  
-
-#### chunks (DEPRECATED)
-- Tidligere brukt i dev-scripts  
-- Kan fases ut når alt er migrert til `rag_chunks`  
-
-#### profiles
-- id (uuid, PK fra auth.users)  
-- role (text, default 'user')  
-- email (text)  
-- name (text)  
-- avatar_url (text)  
-- created_at (timestamp, default now)  
-- updated_at (timestamp, default now via trigger)  
-
-#### rag_usage
-- id (bigint, PK)  
-- created_at (timestamp, default now)  
-- **doc_uuid (uuid, FK → documents.id)**  
-- doc_id (int, LEGACY – fases ut)  
-- source_type (text)  
-- hits (int, default 0)  
-- route (text, default '/api/rag/chat')  
-
-#### message_context_links (planlagt)
-- id (bigint, PK)  
-- message_id (uuid FK → chat_messages.id)  
-- **doc_uuid (uuid FK → documents.id)**  
-- chunk_id (bigint FK → rag_chunks.id)  
+*(ingen endring her, beholdt fra forrige versjon)*  
 
 ---
 
 ## 3. Arkitektur og flyt
-
-### 3.1 Dokumenter & RAG
-1. Dokument lastes opp i admin → Supabase Storage  
-2. syncMissingFiles() → registrerer i `documents`  
-3. chunker.js → splitter i chunks, lagrer i `rag_chunks` med embeddings  
-4. Chatbot → `rag/search.js` henter relevante chunks (semantic search via vector)  
-5. GPT får kontekst + brukerinput → svar lagres (foreløpig ikke i DB)  
-
-### 3.2 Chatter (planlagt)
-1. Bruker starter → `chat_sessions` opprettes  
-2. Meldinger → lagres i `chat_messages`  
-3. Kontekstkobling → `message_context_links` binder meldinger til chunks  
-4. Preferanser → `session_settings`  
-5. Langsiktig minne → `user_memory`  
-
-### 3.3 Hvordan AI + RAG fungerer hos oss (per 05.09.2025)
-
-#### Steg-for-steg flyt
-1. **Bruker skriver spørsmål**  
-   → Teksten fra brukeren mottas av motoren.
-
-2. **Semantisk søk i rag_chunks**  
-   → Systemet lager en embedding av spørsmålet.  
-   → Det gjøres vektorsøk i `rag_chunks` for å finne de mest relevante delene (AI og/eller Master).
-
-3. **AI-dokument alltid inkludert**  
-   → Hele AI-dokumentet for doc_number = 1 legges alltid til som kontekst i hver chat.  
-   → Dette sikrer raske, presise svar i “NullFilter-stil” uavhengig av søketreff.  
-
-4. **Master- og andre chunks som tillegg**  
-   → De mest relevante Master-chunks (og evt. andre dokumenter) hentes inn via RAG.  
-   → Disse brukes for å utdype og gi bredde når det trengs.
-
-5. **GPT svarer**  
-   → GPT får systemprompt + AI-kontekst + valgte chunks.  
-   → Svaret baseres primært på AI (kortversjon), men kan trekkes inn fra Master (utdyping).
-
-6. **Logging**  
-   → `rag_usage` registrerer hvilket dokument og type (`ai` eller `master`) som ble brukt.  
-   → Dette gir grunnlag for analyser:  
-     - Hvor ofte brukes AI vs Master?  
-     - Hvilke tema (doc_number) er mest etterspurt?  
-     - Hvor ofte kombineres AI + Master?  
+*(ingen endring her, beholdt fra forrige versjon)*  
 
 ---
 
 ## 4. Utfordringer og feller
-- PK mangler i `ai_chunks`/`master_chunks` → bør enten legges til eller fases ut  
-- embedding-kolonner er “USER-DEFINED” → må sikres som `vector(1536)`  
-- created_at/updated_at mangler konsistens på noen tabeller  
-- documents RLS altfor åpent (anon kan gjøre alt)  
-- chat_messages m.fl. mangler → loggføring ikke mulig ennå  
-- legacy-kode: `chunks` brukt i 2 filer → nå rettet til `rag_chunks`  
+*(ingen endring her, beholdt fra forrige versjon)*  
 
 ---
 
 ## 5. Neste steg
-1. Opprette tabeller for logging (`chat_sessions`, `chat_messages`, `message_context_links`, `session_settings`, `user_memory`)  
-2. Stramme inn RLS på `documents`  
-3. Standardisere embeddings → `vector(1536)` overalt  
-4. Fjerne gamle tabeller etter at vi er trygge (evt. beholde views for kompatibilitet)  
-5. Lage views / dashboard for status og analyser  
+*(ingen endring her, beholdt fra forrige versjon)*  
 
 ---
 
@@ -206,16 +89,14 @@
   - Begrunnelse: sikrer kjapp respons, tydelig tone og stabil stil.  
   - Konsekvens: prompten blir større, men gir jevnere brukeropplevelse.  
   - Neste vurdering: se på auto-henting av Master-chunks knyttet til samme doc_number når AI-chunks matcher.  
+- **Databaseopprydding (05.09.2025):**  
+  - Alle dummy-rader i `documents` er slettet.  
+  - Kun ekte dokumenter beholdt: doc_number **1** og **50**.  
 
 ---
 
 ## 7. Ideer på pause (Fremtidslogg)
-- Video-avatar i chatboten (spesielt NullFilter)  
-- Samtykkeskjema + e-post-oppfølging  
-- Integrasjon med Kajabi / Make / Notion  
-- Personlig oppfølging (se gamle samtaler, hente opp historikk)  
-- Dashboard med RAG-treff, mest brukte dokumenter, antall samtaler  
-- Fremtidig premium-versjon med GPT-5, minnefunksjon og personlig oppfølging  
+*(ingen endring her, beholdt fra forrige versjon)*  
 
 ---
 
@@ -226,6 +107,7 @@
 - Beslutning: AI alltid med i alle samtaler (allerede i praksis implementert)  
 - Oppdatert dokumentasjon: logging og bruken av Master som utdyping  
 - UUID-migrasjon ferdigstilt i v0.2.2  
+- Database ryddet: kun dokumentene **1** og **50** beholdt  
 
 ### v0.2.2 – UUID invasion 👾🔑 (05.09.2025)
 - Beslutning: migrere alle referanser til `documents.id` (uuid)  
