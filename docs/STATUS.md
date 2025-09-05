@@ -12,7 +12,7 @@
 - Ny seksjon: **Hvordan AI + RAG fungerer hos oss**  
 - Ny beslutning: **AI alltid med i alle samtaler** (allerede i praksis implementert)  
 - Oppdatert dokumentasjon: logging og bruken av Master som utdyping  
-- Status: UUID-migrasjon påbegynt, men backfill ikke ferdig  
+- UUID-migrasjon ferdigstilt i forrige versjon (v0.2.2)  
 
 ---
 
@@ -73,7 +73,7 @@
 
 #### rag_chunks (single source of truth)
 - id (bigint, PK)  
-- **doc_uuid (uuid, FK → documents.id)** ← NY  
+- **doc_uuid (uuid, FK → documents.id)**  
 - doc_id (int, LEGACY – fases ut)  
 - title (text, metadata)  
 - content (text, chunked innhold)  
@@ -107,7 +107,7 @@
 #### rag_usage
 - id (bigint, PK)  
 - created_at (timestamp, default now)  
-- **doc_uuid (uuid, FK → documents.id)** ← NY  
+- **doc_uuid (uuid, FK → documents.id)**  
 - doc_id (int, LEGACY – fases ut)  
 - source_type (text)  
 - hits (int, default 0)  
@@ -175,7 +175,6 @@
 - documents RLS altfor åpent (anon kan gjøre alt)  
 - chat_messages m.fl. mangler → loggføring ikke mulig ennå  
 - legacy-kode: `chunks` brukt i 2 filer → nå rettet til `rag_chunks`  
-- **UUID migrasjon** → vi lever midlertidig med blanding (`doc_id int` + `doc_uuid uuid`)  
 
 ---
 
@@ -183,9 +182,8 @@
 1. Opprette tabeller for logging (`chat_sessions`, `chat_messages`, `message_context_links`, `session_settings`, `user_memory`)  
 2. Stramme inn RLS på `documents`  
 3. Standardisere embeddings → `vector(1536)` overalt  
-4. Fullføre migrering til UUID (backfill + kodeoppdatering)  
-5. Fjerne gamle tabeller etter at vi er trygge (evt. beholde views for kompatibilitet)  
-6. Lage views / dashboard for status og analyser  
+4. Fjerne gamle tabeller etter at vi er trygge (evt. beholde views for kompatibilitet)  
+5. Lage views / dashboard for status og analyser  
 
 ---
 
@@ -201,7 +199,7 @@
 - **Migrasjon til UUID (05.09.2025):**  
   - Hele systemet standardiseres på `documents.id` (uuid) som PK  
   - `doc_number` beholdes kun som menneskevennlig felt  
-  - Midlertidig blanding (`doc_id int` + `doc_uuid uuid`) → migrering påbegynt  
+  - Migrering og backfill gjennomført  
   - Alle nye tabeller bruker `doc_uuid`  
 - **AI alltid med (05.09.2025):**  
   - Hele AI-dokumentet for doc_number = 1 legges inn i alle samtaler.  
@@ -227,13 +225,13 @@
 - Ny seksjon: forklaring på hvordan AI + RAG fungerer steg-for-steg  
 - Beslutning: AI alltid med i alle samtaler (allerede i praksis implementert)  
 - Oppdatert dokumentasjon: logging og bruken av Master som utdyping  
-- Status: UUID-migrasjon påbegynt, men backfill ikke ferdig  
+- UUID-migrasjon ferdigstilt i v0.2.2  
 
 ### v0.2.2 – UUID invasion 👾🔑 (05.09.2025)
 - Beslutning: migrere alle referanser til `documents.id` (uuid)  
 - Oppdatert `rag_chunks`, `rag_usage`, planlagt `message_context_links`  
 - Dokumentert at `doc_number` kun er menneskevennlig referanse  
-- Neste større patch: backfill og kodeendringer  
+- Migrering og backfill gjennomført  
 
 ### v0.2.1 – Apehjernen tar notater 📓🐒 (05.09.2025)
 - Lagt til seksjonen **Beslutninger & Valg** (modell, chunks, logging, sikkerhet, struktur)  
