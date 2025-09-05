@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import withAuth from "../components/withAuth";
 
 import {
@@ -10,10 +10,11 @@ import {
   type DbDocument,
   type DocGroup,
   setTitleForKind,
-  syncMissingFiles, // ✅
+  syncMissingFiles,
 } from "../utils/docs";
 
-import { uploadAndFlag } from "../utils/upload"; // ✅ LEGG TIL DENNE
+import { uploadAndFlag } from "../utils/upload";
+import { listDropdownValues, addDropdownValue } from "../utils/dropdowns"; // ✅ NYE FUNKSJONER
 
 function AdminPage() {
   const [title, setTitle] = useState("");
@@ -27,7 +28,7 @@ function AdminPage() {
   const [customCategory, setCustomCategory] = useState("");
   const [customTheme, setCustomTheme] = useState("");
 
-  const [selectedDocId, setSelectedDocId] = useState<number | null>(null);
+  const [selectedDocNumber, setSelectedDocNumber] = useState<number | null>(null);
   const [aiFile, setAiFile] = useState<File | null>(null);
   const [masterFile, setMasterFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -36,52 +37,22 @@ function AdminPage() {
   const [loadingList, setLoadingList] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
 
-  const docCatalog = useMemo(() => {
-    const map: Record<number, { title: string; category: string; theme: string }> = {
-      1: { title: "Din metode og filosofi", category: "Master", theme: "Grunnprinsipper, metaforer og stil" },
-      2: { title: "Veiledning: Vektnedgang", category: "Prosess", theme: "Vektnedgang, mat og trening" },
-      3: { title: "Veiledning: Mental helse", category: "Prosess", theme: "Tankekjør og følelsesregulering" },
-      4: { title: "Veiledning: Kombinert tilnærming", category: "Prosess", theme: "Mental helse og vekt sammen" },
-      5: { title: "Målgrupper: Vektnedgang", category: "Profil", theme: "Typiske avatarer for vektnedgang" },
-      6: { title: "Målgrupper: Mental helse", category: "Profil", theme: "Typiske avatarer for mental helse" },
-      10: { title: "Tema: Vektnedgang", category: "Tema", theme: "Vektnedgang" },
-      11: { title: "Tema: Trening", category: "Tema", theme: "Trening" },
-      12: { title: "Tema: Kosthold", category: "Tema", theme: "Kosthold" },
-      13: { title: "Tema: Endringspsykologi", category: "Tema", theme: "Endringspsykologi" },
-      14: { title: "Tema: Nevrobiologi", category: "Tema", theme: "Nevrobiologi" },
-      15: { title: "Tema: Bevissthet og underbevissthet", category: "Tema", theme: "Bevissthet og underbevissthet" },
-      16: { title: "Tema: Stress", category: "Tema", theme: "Stress og nervesystem" },
-      17: { title: "Tema: Sorg og livskriser", category: "Tema", theme: "Sorg og traumer" },
-      18: { title: "Tema: Faste", category: "Tema", theme: "Faste og metabolske prosesser" },
-      19: { title: "Tema: Sykdommer", category: "Tema", theme: "Psykisk og fysisk helse" },
-      41: { title: "Q&A: Vektnedgang", category: "Q&A", theme: "Vanlige spørsmål og svar" },
-      42: { title: "Q&A: Mental helse", category: "Q&A", theme: "Vanlige spørsmål og svar" },
-    };
-
-    return Array.from({ length: 50 }, (_, i) => {
-      const id = i + 1;
-      const meta = map[id];
-      return {
-        id,
-        title: meta?.title ?? "(Ledig)",
-        category: meta?.category ?? "-",
-        theme: meta?.theme ?? "-",
-      };
-    });
-  }, []);
-
   async function refreshList() {
     try {
       setLoadingList(true);
       setListError(null);
-      await syncMissingFiles(); // 💡 Synk databasen mot faktisk lagring
+      await syncMissingFiles();
       const docs = await listDocuments();
       setRows(groupByDocNumber(docs));
-      const unique = <T,>(arr: T[]): T[] => Array.from(new Set(arr)).filter((v) => !!v);
 
-      setExistingTitles(unique(docs.map((d) => d.title)));
-      setExistingCategories(unique(docs.map((d) => d.category ?? "").filter(Boolean)));
-      setExistingThemes(unique(docs.map((d) => d.theme ?? "").filter(Boolean)));
+      const [titles, categories, themes] = await Promise.all([
+        listDropdownValues("title"),
+        listDropdownValues("category"),
+        listDropdownValues("theme"),
+      ]);
+      setExistingTitles(titles);
+      setExistingCategories(categories);
+      setExistingThemes(themes);
     } catch (e: any) {
       console.error(e);
       setListError(e?.message ?? "Kunne ikke hente dokumenter");
@@ -100,37 +71,41 @@ function AdminPage() {
 
   async function handleUpload() {
     try {
-      if (!selectedDocId || (!aiFile && !masterFile)) {
+      if (!selectedDocNumber || (!aiFile && !masterFile)) {
         alert("Velg dokumentnummer og minst én fil (AI og/eller Master).");
         return;
       }
 
-      const label = docCatalog.find((d) => d.id === selectedDocId);
-      const title = label?.title ?? "(Ledig)";
-      const category = label?.category === "-" ? null : label?.category ?? null;
-      const theme = label?.theme === "-" ? null : label?.theme ?? null;
+      // Hvis bruker har lagt til ny dropdown-verdi → lagre i dropdown_values
+      if (customTitle) await addDropdownValue("title", customTitle);
+      if (customCategory) await addDropdownValue("category", customCategory);
+      if (customTheme) await addDropdownValue("theme", customTheme);
+
+      const finalTitle = customTitle || title || null;
+      const finalCategory = customCategory || category || null;
+      const finalTheme = customTheme || theme || null;
 
       setIsUploading(true);
 
       await upsertDocument({
-        docNumber: selectedDocId,
-        title,
-        category,
-        theme,
+        docNumber: selectedDocNumber,
+        title: finalTitle,
+        category: finalCategory,
+        theme: finalTheme,
       });
 
       if (aiFile) {
-        await uploadAndFlag({ file: aiFile, docNumber: selectedDocId, kind: "ai" });
+        await uploadAndFlag({ file: aiFile, docNumber: selectedDocNumber, kind: "ai" });
         await setTitleForKind({
-          docNumber: selectedDocId,
+          docNumber: selectedDocNumber,
           isMaster: false,
           title: aiFile.name.replace(/\.[^/.]+$/, ""),
         });
       }
       if (masterFile) {
-        await uploadAndFlag({ file: masterFile, docNumber: selectedDocId, kind: "master" });
+        await uploadAndFlag({ file: masterFile, docNumber: selectedDocNumber, kind: "master" });
         await setTitleForKind({
-          docNumber: selectedDocId,
+          docNumber: selectedDocNumber,
           isMaster: true,
           title: masterFile.name.replace(/\.[^/.]+$/, ""),
         });
@@ -138,11 +113,18 @@ function AdminPage() {
 
       setAiFile(null);
       setMasterFile(null);
-      setSelectedDocId(null);
+      setSelectedDocNumber(null);
+      setTitle("");
+      setCategory("");
+      setTheme("");
+      setCustomTitle("");
+      setCustomCategory("");
+      setCustomTheme("");
+
       await refreshList();
 
       alert(
-        `Opplastet dokument #${selectedDocId}\nAI: ${aiFile?.name || "Ingen"}\nMaster: ${masterFile?.name || "Ingen"}`
+        `Opplastet dokument #${selectedDocNumber}\nAI: ${aiFile?.name || "Ingen"}\nMaster: ${masterFile?.name || "Ingen"}`
       );
     } catch (err: any) {
       console.error(err);
@@ -180,19 +162,18 @@ function AdminPage() {
           </tr>
         </thead>
         <tbody>
-          {docCatalog.map((cat) => {
-            const g = getGroup(cat.id);
+          {rows.map((g) => {
             const ai = g?.ai as DbDocument | undefined;
             const master = g?.master as DbDocument | undefined;
             const createdAt = master?.created_at || ai?.created_at || null;
             const sourcePath = master?.source_path || ai?.source_path || "";
 
             return (
-              <tr key={cat.id}>
-                <td>{cat.id}</td>
-                <td>{cat.title}</td>
-                <td>{cat.category}</td>
-                <td>{cat.theme}</td>
+              <tr key={g.docNumber}>
+                <td>{g.docNumber}</td>
+                <td>{g.title}</td>
+                <td>{g.category}</td>
+                <td>{g.theme}</td>
                 <td>{ai ? "✅" : "🔲"}</td>
                 <td>{master ? "✅" : "🔲"}</td>
                 <td style={{ maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -215,17 +196,13 @@ function AdminPage() {
         <div>
           <label>
             <strong>1. Dokumentnummer:</strong><br />
-            <select
-              onChange={(e) => setSelectedDocId(e.target.value ? parseInt(e.target.value, 10) : null)}
-              value={selectedDocId ?? ""}
-            >
-              <option value="" disabled>Velg dokument…</option>
-              {docCatalog.map((doc) => (
-                <option key={doc.id} value={doc.id}>
-                  #{doc.id} – {doc.title}
-                </option>
-              ))}
-            </select>
+            <input
+              type="number"
+              value={selectedDocNumber ?? ""}
+              onChange={(e) => setSelectedDocNumber(e.target.value ? parseInt(e.target.value, 10) : null)}
+              placeholder="Skriv nytt dokumentnummer"
+              style={{ width: 120 }}
+            />
           </label>
         </div>
 
@@ -326,14 +303,14 @@ function AdminPage() {
 
       <button
         onClick={handleUpload}
-        disabled={!selectedDocId || (!aiFile && !masterFile) || isUploading}
+        disabled={!selectedDocNumber || (!aiFile && !masterFile) || isUploading}
         style={{
           background: "#2D88FF",
           color: "white",
           padding: "10px 20px",
           border: "none",
           borderRadius: 6,
-          cursor: !selectedDocId || (!aiFile && !masterFile) || isUploading ? "not-allowed" : "pointer",
+          cursor: !selectedDocNumber || (!aiFile && !masterFile) || isUploading ? "not-allowed" : "pointer",
         }}
       >
         {isUploading ? "Laster opp…" : "Last opp dokument(er)"}
