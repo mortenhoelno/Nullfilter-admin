@@ -65,10 +65,6 @@ function AdminPage() {
     refreshList();
   }, []);
 
-  function getGroup(num: number): DocGroup | undefined {
-    return rows.find((g) => g.docNumber === num);
-  }
-
   async function handleUpload() {
     try {
       if (!selectedDocNumber || (!aiFile && !masterFile)) {
@@ -76,7 +72,7 @@ function AdminPage() {
         return;
       }
 
-      // Hvis bruker har lagt til ny dropdown-verdi → lagre i dropdown_values
+      // Hvis bruker har lagt til nye dropdown-verdier → lagre dem
       if (customTitle) await addDropdownValue("title", customTitle);
       if (customCategory) await addDropdownValue("category", customCategory);
       if (customTheme) await addDropdownValue("theme", customTheme);
@@ -163,17 +159,18 @@ function AdminPage() {
         </thead>
         <tbody>
           {rows.map((g) => {
-            const ai = g?.ai as DbDocument | undefined;
-            const master = g?.master as DbDocument | undefined;
+            const ai = g.ai as DbDocument | undefined;
+            const master = g.master as DbDocument | undefined;
+            const meta = ai ?? master; // ✅ ta metadata fra ett av dokumentene
             const createdAt = master?.created_at || ai?.created_at || null;
             const sourcePath = master?.source_path || ai?.source_path || "";
 
             return (
               <tr key={g.docNumber}>
                 <td>{g.docNumber}</td>
-                <td>{g.title}</td>
-                <td>{g.category}</td>
-                <td>{g.theme}</td>
+                <td>{meta?.title || "—"}</td>
+                <td>{meta?.category || "—"}</td>
+                <td>{meta?.theme || "—"}</td>
                 <td>{ai ? "✅" : "🔲"}</td>
                 <td>{master ? "✅" : "🔲"}</td>
                 <td style={{ maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
