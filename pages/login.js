@@ -12,7 +12,6 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!authEnabled()) {
-      // Auth slått av -> ingen vits å være her
       router.replace("/admin");
     }
   }, [router]);
@@ -30,25 +29,6 @@ export default function LoginPage() {
       setErr(e.message || "Kunne ikke logge inn.");
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function handleResetPassword() {
-    setErr("");
-    if (!email) {
-      setErr("Skriv inn e-post først.");
-      return;
-    }
-    try {
-      const supabase = supabaseBrowser();
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        // ⬇️ Viktig: send brukeren til siden hvor de kan sette nytt passord
-        redirectTo: `${window.location.origin}/reset-password`,
-      });
-      if (error) throw error;
-      alert("Passord-epost sendt (hvis adressen finnes).");
-    } catch (e) {
-      setErr(e.message || "Feil ved sending av reset-epost.");
     }
   }
 
@@ -87,8 +67,9 @@ export default function LoginPage() {
             {loading ? "Logger inn…" : "Logg inn"}
           </button>
         </form>
+
         <button
-          onClick={handleResetPassword}
+          onClick={() => router.push("/forgot-password")}
           className="mt-4 text-sm text-blue-600 hover:underline"
         >
           Glemt passord?
