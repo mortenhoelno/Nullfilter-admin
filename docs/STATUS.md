@@ -4,16 +4,15 @@
 - **05.09.2025**
 
 ### Versjon
-- **v0.2.3 – Always AI 🤖✨**
+- **v0.2.4 – Chunkmageddon 🧩⚡**
 
 ---
 
 ## Siste endringer
-- Ny seksjon: **Hvordan AI + RAG fungerer hos oss**  
-- Ny beslutning: **AI alltid med i alle samtaler** (allerede i praksis implementert)  
-- Oppdatert dokumentasjon: logging og bruken av Master som utdyping  
-- UUID-migrasjon ferdigstilt i forrige versjon (v0.2.2)  
-- Database ryddet: kun dokumentene **#1 (AI_mini_Morten)** og **#50 (MASTER_Hjernen_vaner_endring)** beholdt  
+- Fullført **migrering av rag_chunks.doc_id fra int → uuid** med ekte FK til `documents.id`.  
+- Backfill av `title` på alle chunks (AI + MASTER) fra dokumenter.  
+- Nå kan alle chunks kobles direkte til `documents` via uuid, og viser samme tittel som dokumentet de tilhører.  
+- Systemet er nå helt ryddet: `documents.id` (uuid) er den eneste sanne koblingen, mens `doc_number` beholdes kun som menneskevennlig felt.  
 
 ---
 
@@ -51,22 +50,70 @@
 ---
 
 ## 2. Databaseoversikt
-*(ingen endring her, beholdt fra forrige versjon)*  
+
+**documents**
+- id (uuid, PK)  
+- doc_number (int, unikt, menneskevennlig nøkkel)  
+- title, category, theme (metadata)  
+- source, source_path, sha256, doc_hash (filreferanser)  
+- version (default 'v1')  
+- has_master, has_ai (flags)  
+- created_at  
+
+**rag_chunks (nå helt migrert)**
+- id (bigint, PK)  
+- doc_id (uuid, FK → documents.id) ✅  
+- title (samme som dokumentets tittel)  
+- content, token_count, chunk_index  
+- source_type ('ai' | 'master')  
+- embedding (vector(1536))  
+- created_at  
+
+**chat_sessions**
+- id (uuid, PK)  
+- bot_name (text)  
+- user_id (uuid, nullable)  
+- started_at, ended_at  
+
+**chat_messages**
+- id (uuid, PK)  
+- session_id (uuid, FK → chat_sessions.id)  
+- role ('user' | 'assistant' | 'system')  
+- content (text)  
+- tokens (int, nullable)  
+- created_at  
+
+**message_context_links**
+- id (bigint, PK)  
+- message_id (uuid, FK → chat_messages.id)  
+- chunk_id (bigint, FK → rag_chunks.id)  
+- similarity (float4)  
+- created_at  
 
 ---
 
 ## 3. Arkitektur og flyt
-*(ingen endring her, beholdt fra forrige versjon)*  
+- **Documents** = metadata om hele filer.  
+- **Rag_chunks** = faktiske tekstbiter (AI og MASTER), knyttet til dokument via uuid.  
+- **Chat_sessions** = samtaler, med info om hvilken bot og bruker.  
+- **Chat_messages** = meldinger i en samtale.  
+- **Message_context_links** = kobler meldinger til chunks (hvilken kunnskap som ble brukt).  
 
 ---
 
 ## 4. Utfordringer og feller
-*(ingen endring her, beholdt fra forrige versjon)*  
+- Før migreringen var `rag_chunks.doc_id` int (doc_number), nå er alt rent med uuid.  
+- Viktig å huske: `doc_number` eksisterer kun som menneskevennlig felt, aldri som kobling.  
 
 ---
 
 ## 5. Neste steg
-*(ingen endring her, beholdt fra forrige versjon)*  
+- Oppdatere `ingest.js` slik at nye chunks alltid får dokumentets tittel automatisk.  
+- Bygge ut `api/chat.js` til å logge sessions + meldinger + context-links.  
+- Lage admin/status-dashboard med oversikt:  
+  - Antall samtaler siste uke  
+  - Mest brukte dokumenter  
+  - Treff AI vs MASTER  
 
 ---
 
@@ -83,7 +130,6 @@
   - Hele systemet standardiseres på `documents.id` (uuid) som PK  
   - `doc_number` beholdes kun som menneskevennlig felt  
   - Migrering og backfill gjennomført  
-  - Alle nye tabeller bruker `doc_uuid`  
 - **AI alltid med (05.09.2025):**  
   - Hele AI-dokumentet for doc_number = 1 legges inn i alle samtaler.  
   - Begrunnelse: sikrer kjapp respons, tydelig tone og stabil stil.  
@@ -92,15 +138,29 @@
 - **Databaseopprydding (05.09.2025):**  
   - Alle dummy-rader i `documents` er slettet.  
   - Kun ekte dokumenter beholdt: doc_number **1** og **50**.  
+- **Migrasjon av rag_chunks (05.09.2025):**  
+  - `doc_id` flyttet fra int (doc_number) → uuid (documents.id)  
+  - Backfill av `title` fra dokumenter  
+  - Fremtid: alle koblinger går via uuid, `doc_number` kun for menneskelig referanse  
 
 ---
 
 ## 7. Ideer på pause (Fremtidslogg)
-*(ingen endring her, beholdt fra forrige versjon)*  
+- Video-avatar i chatboten (spesielt NullFilter)  
+- Samtykkeskjema + e-post-oppfølging  
+- Integrasjon med Kajabi / Make / Notion  
+- Personlig oppfølging (se gamle samtaler, hente opp historikk)  
+- Dashboard med RAG-treff, mest brukte dokumenter, antall samtaler  
+- Fremtidig premium-versjon med GPT-5, minnefunksjon og personlig oppfølging  
 
 ---
 
 ## 1000. Changelog
+
+### v0.2.4 – Chunkmageddon 🧩⚡ (05.09.2025)
+- Migrert `rag_chunks.doc_id` fra int → uuid med FK til documents.id  
+- Backfill av `title` for alle chunks  
+- Dokumentert hvordan dokumenter, chunks og logging-tabeller henger sammen  
 
 ### v0.2.3 – Always AI 🤖✨ (05.09.2025)
 - Ny seksjon: forklaring på hvordan AI + RAG fungerer steg-for-steg  
