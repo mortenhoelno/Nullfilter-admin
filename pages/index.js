@@ -1,5 +1,7 @@
 // pages/index.js — FERDIG OPPDATERT
+import withAuth from "../components/withAuth";
 import { useEffect, useRef, useState } from "react";
+
 
 export default function Home() {
   // === Eksisterende state (chunk-sync + embeddings) ===
@@ -505,3 +507,4 @@ export default function Home() {
     </main>
   );
 }
+export default withAuth(HomePage);
