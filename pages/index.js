@@ -2,8 +2,7 @@
 import withAuth from "../components/withAuth";
 import { useEffect, useRef, useState } from "react";
 
-
-export default function Home() {
+function HomePage() {
   // === Eksisterende state (chunk-sync + embeddings) ===
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState("new");
@@ -507,4 +506,5 @@ export default function Home() {
     </main>
   );
 }
+
 export default withAuth(HomePage);
