@@ -1,4 +1,4 @@
-// components/ChatEngine.js — NY VERSJON med anti-spam på quick replies
+// components/ChatEngine.js — NY VERSJON med auto-resize input + stabil ventetekst + anti-spam quick replies
 
 import { useRef, useEffect, useState } from "react";
 
@@ -23,14 +23,17 @@ export default function ChatEngine({
 }) {
   const listRef = useRef(null);
   const bottomRef = useRef(null);
+  const textareaRef = useRef(null);
+
   const [waitingMessage, setWaitingMessage] = useState(null);
-  const [displayedText, setDisplayedText] = useState(""); // typing-effekt
+  const [displayedText, setDisplayedText] = useState("");
   const [fadeOut, setFadeOut] = useState(false);
+  const [quickReplyCount, setQuickReplyCount] = useState(0);
 
   // Scroll til bunnen når nye meldinger kommer
   useEffect(() => {
     if (bottomRef.current) {
-      bottomRef.current.scrollIntoView({ behavior: "smooth" });
+      bottomRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
     }
   }, [messages]);
 
@@ -75,6 +78,14 @@ export default function ChatEngine({
     }
   }, [loading]);
 
+  // Auto-resize textarea
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = textareaRef.current.scrollHeight + "px";
+    }
+  }, [input]);
+
   const colorMap = {
     blue: {
       user: "bg-blue-100 text-blue-900",
@@ -88,6 +99,18 @@ export default function ChatEngine({
     },
   };
   const theme = colorMap[themeColor] || colorMap.blue;
+
+  const handleQuickReply = (s) => {
+    if (loading) return;
+    if (quickReplyCount >= 3) {
+      // humoristisk "glimt i øyet" melding fra boten
+      onSend("Hei, skriver du eller har du sovnet på tastaturet? 😅");
+      setQuickReplyCount(0);
+      return;
+    }
+    setQuickReplyCount((c) => c + 1);
+    onSend(s);
+  };
 
   return (
     <div className="flex flex-col h-[70vh] max-h-[600px]">
@@ -111,20 +134,19 @@ export default function ChatEngine({
           </div>
         ))}
 
-        {/* Ventemelding */}
-        {waitingMessage && (
-          <div className="flex justify-start">
+        {/* Ventemelding (reserverer plass nederst) */}
+        <div className="min-h-[24px] flex items-center">
+          {waitingMessage && (
             <div
-              className={`
-                text-sm italic text-gray-500 transition-opacity duration-600
-                ${fadeOut ? "opacity-0" : "opacity-80"}
-              `}
+              className={`text-sm italic text-gray-500 transition-opacity duration-600 ${
+                fadeOut ? "opacity-0" : "opacity-80"
+              }`}
             >
               {displayedText}
               <span className="animate-pulse">|</span>
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Quick replies */}
         {suggestions.length > 0 && !fadeOut && (
@@ -132,7 +154,7 @@ export default function ChatEngine({
             {suggestions.map((s, i) => (
               <button
                 key={i}
-                onClick={() => !loading && onSend(s)} // 🔒 låst når loading=true
+                onClick={() => handleQuickReply(s)}
                 disabled={loading}
                 className={`px-3 py-1 rounded-full text-sm shadow ${
                   loading
@@ -149,21 +171,28 @@ export default function ChatEngine({
         <div ref={bottomRef} />
       </div>
 
-      {/* Inputfelt */}
+      {/* Inputfelt med auto-resize */}
       <div className="mt-3 flex gap-2">
-        <input
-          type="text"
-          className="flex-1 border px-3 py-2 rounded"
+        <textarea
+          ref={textareaRef}
+          className="flex-1 border px-3 py-2 rounded resize-none overflow-hidden max-h-32"
           placeholder="Skriv en melding..."
           value={input}
+          rows={1}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") onSend();
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              onSend();
+            }
           }}
         />
         <button
           onClick={onSend}
-          className={`px-4 py-2 rounded text-white ${theme.button}`}
+          disabled={loading}
+          className={`px-4 py-2 rounded text-white ${theme.button} ${
+            loading ? "opacity-50 cursor-not-allowed" : ""
+          }`}
         >
           Send
         </button>
