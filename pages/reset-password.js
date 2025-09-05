@@ -14,15 +14,23 @@ export default function ResetPasswordPage() {
   const [pw2, setPw2] = useState("");
   const [done, setDone] = useState(false);
 
-  // Når du kommer hit via e-postlenke (type=recovery),
-  // supabase-js oppretter som regel en session automatisk.
+  // Når du kommer hit via e-postlenke (invite/signup/recovery),
+  // supabase-js setter normalt en session automatisk.
   useEffect(() => {
     let mounted = true;
     (async () => {
       setLoading(true);
       setErr("");
-
       try {
+        // Belt & braces: sjekk hash for type=recovery|signup|invite
+        if (typeof window !== "undefined" && window.location?.hash) {
+          const hash = window.location.hash.replace(/^#/, "");
+          const qp = new URLSearchParams(hash);
+          const linkType = (qp.get("type") || "").toLowerCase();
+          if (["recovery", "signup", "invite"].includes(linkType)) {
+            // supabase håndterer token i hash -> getSession skal gi session
+          }
+        }
         const { data, error } = await supabase.auth.getSession();
         if (error) throw error;
         if (mounted) setHasSession(!!data?.session);
@@ -32,7 +40,6 @@ export default function ResetPasswordPage() {
         if (mounted) setLoading(false);
       }
     })();
-
     return () => { mounted = false; };
   }, [supabase]);
 
@@ -40,7 +47,6 @@ export default function ResetPasswordPage() {
     e.preventDefault();
     setErr("");
 
-    // Validering
     if (!pw1 || !pw2) return setErr("Skriv nytt passord to ganger.");
     if (pw1 !== pw2) return setErr("Passordene er ikke like.");
     if (pw1.length < 8) return setErr("Passord må være minst 8 tegn.");
@@ -66,21 +72,21 @@ export default function ResetPasswordPage() {
   }
 
   if (!hasSession && !done) {
+    // Kom hit uten gyldig e-postlenke (eller utløpt lenke)
     return (
       <div className="min-h-screen grid place-items-center p-6">
         <div className="max-w-md w-full bg-white rounded-2xl shadow p-6">
           <h1 className="text-xl font-semibold mb-2">Lenken er utløpt eller ugyldig</h1>
           <p className="text-sm text-gray-600">
-            Vi fant ingen aktiv innloggingsøkt fra e-postlenken. Be om ny “Glemt passord”-epost fra
-            <button
-              className="ml-1 text-blue-600 underline"
-              onClick={() => router.replace("/login")}
-            >
-              innloggingssiden
-            </button>
-            .
+            Gå til siden for glemt passord og be om en ny lenke.
           </p>
           {err ? <p className="mt-3 text-sm text-rose-600">Detaljer: {err}</p> : null}
+          <button
+            onClick={() => router.replace("/forgot-password")}
+            className="mt-4 px-4 py-2 rounded-xl bg-slate-900 text-white hover:opacity-90"
+          >
+            Gå til “Glemt passord”
+          </button>
         </div>
       </div>
     );
@@ -108,9 +114,9 @@ export default function ResetPasswordPage() {
   return (
     <div className="min-h-screen grid place-items-center p-6">
       <div className="max-w-md w-full bg-white rounded-2xl shadow p-6">
-        <h1 className="text-xl font-semibold mb-2">Sett nytt passord</h1>
+        <h1 className="text-xl font-semibold mb-2">Skriv inn nytt passord</h1>
         <p className="text-sm text-gray-600 mb-4">
-          Skriv inn nytt passord to ganger. (Ja, vi dobbeltsjekker – apehjernen liker bekreftelser 🦍🔒)
+          Denne siden brukes både første gang du blir invitert og når du skal resette passordet ditt.
         </p>
 
         {err ? (
