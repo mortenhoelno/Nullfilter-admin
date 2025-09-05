@@ -4,14 +4,14 @@
 - **05.09.2025**
 
 ### Versjon
-- **v0.2.1 – Apehjernen tar notater 📓🐒**
+- **v0.2.2 – UUID invasion 👾🔑**
 
 ---
 
 ## Siste endringer
-- Ny seksjon: **Beslutninger & Valg** – samlet oversikt over faktiske valg vi har tatt  
-- Ny seksjon: **Ideer på pause (Fremtidslogg)** – egen logg for idéer som er parkert  
-- STATUS.md fungerer nå både som statusrapport og felles hukommelse  
+- Ny beslutning: **Migrasjon til UUID** som primærnøkkel i hele systemet  
+- Oppdatert databaseoversikt for `rag_chunks` og `rag_usage`  
+- Status: Midlertidig blanding (int + uuid), migreringsløp planlegges  
 
 ---
 
@@ -53,7 +53,7 @@
 - **Postgres-versjon**: 17.4 (64-bit, aarch64)  
 - **Search path**: `$user, public, extensions`  
 
-### 2.2 Tabeller & kolonner
+### 2.2 Tabeller & kolonner (oppdatert)
 
 #### documents
 - id (uuid, PK, default gen_random_uuid)  
@@ -64,7 +64,7 @@
 - source_path (text, filreferanse)  
 - sha256 (text, hash av fil)  
 - doc_hash (text, hash av innhold)  
-- doc_number (int, unik indeks)  
+- doc_number (int, unik indeks, kun menneskevennlig referanse)  
 - version (text, default 'v1')  
 - has_master (boolean, default false)  
 - has_ai (boolean, default false)  
@@ -72,7 +72,8 @@
 
 #### rag_chunks (single source of truth)
 - id (bigint, PK)  
-- doc_id (int, FK → documents.id)  
+- **doc_uuid (uuid, FK → documents.id)** ← NY  
+- doc_id (int, LEGACY – fases ut)  
 - title (text, metadata)  
 - content (text, chunked innhold)  
 - chunk_index (int, posisjon i dokument)  
@@ -105,34 +106,17 @@
 #### rag_usage
 - id (bigint, PK)  
 - created_at (timestamp, default now)  
-- doc_id (int, FK → documents.id)  
+- **doc_uuid (uuid, FK → documents.id)** ← NY  
+- doc_id (int, LEGACY – fases ut)  
 - source_type (text)  
 - hits (int, default 0)  
 - route (text, default '/api/rag/chat')  
 
-### 2.3 Policies (RLS)
-- documents: altfor åpent (anon kan lese/insert/update) → bør strammes inn  
-- profiles: kun eier kan lese/endre seg selv  
-- rag_chunks: kun service_role kan skrive, authenticated kan lese  
-
-### 2.4 Triggere & funksjoner
-- handle_new_user: lager profil ved ny auth-bruker (SECURITY DEFINER)  
-- profiles_set_updated_at: setter `updated_at` via trigger  
-- handle_updated_at: setter `updated_at` via trigger  
-
-### 2.5 Indekser
-- rag_chunks: ivfflat på embedding + unik `(doc_id, source_type, chunk_index)`  
-- documents: unik på doc_number  
-- rag_usage: indekser på created_at, doc_id, source_type  
-- chunks: gamle indekser finnes fortsatt (kan fjernes når tabellen slettes)  
-
-### 2.6 Extensions
-- vector 0.8.0 (for embeddings)  
-- pg_graphql  
-- pgcrypto  
-- uuid-ossp  
-- supabase_vault  
-- pg_stat_statements  
+#### message_context_links (planlagt)
+- id (bigint, PK)  
+- message_id (uuid FK → chat_messages.id)  
+- **doc_uuid (uuid FK → documents.id)**  
+- chunk_id (bigint FK → rag_chunks.id)  
 
 ---
 
@@ -161,6 +145,7 @@
 - documents RLS altfor åpent (anon kan gjøre alt)  
 - chat_messages m.fl. mangler → loggføring ikke mulig ennå  
 - legacy-kode: `chunks` brukt i 2 filer → nå rettet til `rag_chunks`  
+- **UUID migrasjon** → vi lever midlertidig med blanding (`doc_id int` + `doc_uuid uuid`)  
 
 ---
 
@@ -168,8 +153,9 @@
 1. Opprette tabeller for logging (`chat_sessions`, `chat_messages`, `message_context_links`, `session_settings`, `user_memory`)  
 2. Stramme inn RLS på `documents`  
 3. Standardisere embeddings → `vector(1536)` overalt  
-4. Fjerne gamle tabeller etter at vi er trygge (evt. beholde views for kompatibilitet)  
-5. Lage views / dashboard for status og analyser  
+4. Fullføre migrering til UUID (backfill + kodeoppdatering)  
+5. Fjerne gamle tabeller etter at vi er trygge (evt. beholde views for kompatibilitet)  
+6. Lage views / dashboard for status og analyser  
 
 ---
 
@@ -182,6 +168,11 @@
 - Filstruktur: Enkel, flat struktur med duplisering fremfor abstraksjon  
 - PersonaConfig: Alt av chatbot-personlighet styres her  
 - STATUS.md + changelog: Brukes som felles hukommelse  
+- **Migrasjon til UUID (05.09.2025):**  
+  - Hele systemet standardiseres på `documents.id` (uuid) som PK  
+  - `doc_number` beholdes kun som menneskevennlig felt  
+  - Midlertidig blanding (`doc_id int` + `doc_uuid uuid`) → migrering kjøres i neste patch  
+  - Alle nye tabeller bruker `doc_uuid`  
 
 ---
 
@@ -196,6 +187,12 @@
 ---
 
 ## 8. Changelog
+
+### v0.2.2 – UUID invasion 👾🔑 (05.09.2025)
+- Beslutning: migrere alle referanser til `documents.id` (uuid)  
+- Oppdatert `rag_chunks`, `rag_usage`, planlagt `message_context_links`  
+- Dokumentert at `doc_number` kun er menneskevennlig referanse  
+- Neste større patch: backfill og kodeendringer  
 
 ### v0.2.1 – Apehjernen tar notater 📓🐒 (05.09.2025)
 - Lagt til seksjonen **Beslutninger & Valg** (modell, chunks, logging, sikkerhet, struktur)  
