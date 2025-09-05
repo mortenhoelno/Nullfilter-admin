@@ -88,7 +88,7 @@
 
 ## 4. Utfordringer og feller
 
-- **PK mangler** i `ai_chunks`/`master_chunks` → bør enten legges til eller faset ut  
+- **PK mangler** i `ai_chunks`/`master_chunks` → bør enten legges til eller fases ut  
 - **embedding-kolonner** er “USER-DEFINED” → må sikres som `vector(1536)`  
 - **created_at/updated_at** mangler konsistens på noen tabeller  
 - **documents RLS** altfor åpent (anon kan gjøre alt)  
@@ -107,7 +107,36 @@
 
 ---
 
-## 6. Changelog
+## 6. Beslutninger & Valg
+
+- **AI-modellvalg**: Kjører GPT-4o nå, oppgraderer til GPT-5 i betalt versjon.  
+- **Chunk-tabeller**: Konsolidert til `rag_chunks` med `source_type` = 'ai' | 'master'.  
+- **ChatEngine meldingshistorikk**: Bruker 10 siste meldinger nå, plan for dynamisk historikk senere.  
+- **RLS & sikkerhet**: Åpent i utviklingsfasen, strammes inn i produksjon.  
+- **Logging & analyse**: Vi skal logge `chat_sessions` og `chat_messages` for kvalitet og innsikt.  
+- **Filstruktur**: Enkel, flat struktur med duplisering fremfor abstraksjon.  
+- **PersonaConfig**: Alt av chatbot-personlighet styres her.  
+- **STATUS.md + changelog**: Brukes som felles hukommelse.  
+
+---
+
+## 7. Ideer på pause (Fremtidslogg)
+
+- **Video-avatar** i chatboten (spesielt NullFilter).  
+- **Samtykkeskjema + e-post-oppfølging**.  
+- **Integrasjon med Kajabi / Make / Notion**.  
+- **Personlig oppfølging** (se gamle samtaler, hente opp historikk).  
+- **Dashboard** med RAG-treff, mest brukte dokumenter, antall samtaler.  
+- **Fremtidig premium-versjon** med GPT-5, minnefunksjon og personlig oppfølging.  
+
+---
+
+## 8. Changelog
+
+### v0.2.1 – Apehjernen tar notater 📓🐒 (05.09.2025)
+- Lagt til seksjonen **Beslutninger & Valg** (modell, chunks, logging, sikkerhet, struktur)  
+- Lagt til seksjonen **Ideer på pause (Fremtidslogg)**  
+- Dokumentet fungerer nå også som felles hukommelse  
 
 ### v0.2.0 – RagChunks strikes back ⚡️📚 (05.09.2025)
 - Konsolidert til `rag_chunks` som eneste sanne kilde for chunks  
