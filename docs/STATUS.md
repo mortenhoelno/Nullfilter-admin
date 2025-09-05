@@ -4,14 +4,15 @@
 - **05.09.2025**
 
 ### Versjon
-- **v0.2.2 – UUID invasion 👾🔑**
+- **v0.2.3 – Always AI 🤖✨**
 
 ---
 
 ## Siste endringer
-- Ny beslutning: **Migrasjon til UUID** som primærnøkkel i hele systemet  
-- Oppdatert databaseoversikt for `rag_chunks` og `rag_usage`  
-- Status: Midlertidig blanding (int + uuid), migreringsløp planlegges  
+- Ny seksjon: **Hvordan AI + RAG fungerer hos oss**  
+- Ny beslutning: **AI alltid med i alle samtaler** (allerede i praksis implementert)  
+- Oppdatert dokumentasjon: logging og bruken av Master som utdyping  
+- Status: UUID-migrasjon påbegynt, men backfill ikke ferdig  
 
 ---
 
@@ -136,6 +137,35 @@
 4. Preferanser → `session_settings`  
 5. Langsiktig minne → `user_memory`  
 
+### 3.3 Hvordan AI + RAG fungerer hos oss (per 05.09.2025)
+
+#### Steg-for-steg flyt
+1. **Bruker skriver spørsmål**  
+   → Teksten fra brukeren mottas av motoren.
+
+2. **Semantisk søk i rag_chunks**  
+   → Systemet lager en embedding av spørsmålet.  
+   → Det gjøres vektorsøk i `rag_chunks` for å finne de mest relevante delene (AI og/eller Master).
+
+3. **AI-dokument alltid inkludert**  
+   → Hele AI-dokumentet for doc_number = 1 legges alltid til som kontekst i hver chat.  
+   → Dette sikrer raske, presise svar i “NullFilter-stil” uavhengig av søketreff.  
+
+4. **Master- og andre chunks som tillegg**  
+   → De mest relevante Master-chunks (og evt. andre dokumenter) hentes inn via RAG.  
+   → Disse brukes for å utdype og gi bredde når det trengs.
+
+5. **GPT svarer**  
+   → GPT får systemprompt + AI-kontekst + valgte chunks.  
+   → Svaret baseres primært på AI (kortversjon), men kan trekkes inn fra Master (utdyping).
+
+6. **Logging**  
+   → `rag_usage` registrerer hvilket dokument og type (`ai` eller `master`) som ble brukt.  
+   → Dette gir grunnlag for analyser:  
+     - Hvor ofte brukes AI vs Master?  
+     - Hvilke tema (doc_number) er mest etterspurt?  
+     - Hvor ofte kombineres AI + Master?  
+
 ---
 
 ## 4. Utfordringer og feller
@@ -171,8 +201,13 @@
 - **Migrasjon til UUID (05.09.2025):**  
   - Hele systemet standardiseres på `documents.id` (uuid) som PK  
   - `doc_number` beholdes kun som menneskevennlig felt  
-  - Midlertidig blanding (`doc_id int` + `doc_uuid uuid`) → migrering kjøres i neste patch  
+  - Midlertidig blanding (`doc_id int` + `doc_uuid uuid`) → migrering påbegynt  
   - Alle nye tabeller bruker `doc_uuid`  
+- **AI alltid med (05.09.2025):**  
+  - Hele AI-dokumentet for doc_number = 1 legges inn i alle samtaler.  
+  - Begrunnelse: sikrer kjapp respons, tydelig tone og stabil stil.  
+  - Konsekvens: prompten blir større, men gir jevnere brukeropplevelse.  
+  - Neste vurdering: se på auto-henting av Master-chunks knyttet til samme doc_number når AI-chunks matcher.  
 
 ---
 
@@ -186,7 +221,13 @@
 
 ---
 
-## 8. Changelog
+## 1000. Changelog
+
+### v0.2.3 – Always AI 🤖✨ (05.09.2025)
+- Ny seksjon: forklaring på hvordan AI + RAG fungerer steg-for-steg  
+- Beslutning: AI alltid med i alle samtaler (allerede i praksis implementert)  
+- Oppdatert dokumentasjon: logging og bruken av Master som utdyping  
+- Status: UUID-migrasjon påbegynt, men backfill ikke ferdig  
 
 ### v0.2.2 – UUID invasion 👾🔑 (05.09.2025)
 - Beslutning: migrere alle referanser til `documents.id` (uuid)  
