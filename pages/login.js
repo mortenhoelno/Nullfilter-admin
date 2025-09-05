@@ -42,7 +42,8 @@ export default function LoginPage() {
     try {
       const supabase = supabaseBrowser();
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/login`,
+        // ⬇️ Viktig: send brukeren til siden hvor de kan sette nytt passord
+        redirectTo: `${window.location.origin}/reset-password`,
       });
       if (error) throw error;
       alert("Passord-epost sendt (hvis adressen finnes).");
