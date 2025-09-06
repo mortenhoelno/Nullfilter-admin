@@ -155,6 +155,43 @@
 
 ---
 
+## 8. Økonomi & Break-even 💰📊
+
+### 8.1 Totale faste kostnader pr. måned
+- **Hosting (Vercel + Supabase)**: ~1 000 kr  
+- **GitHub + domene/småting**: ~500 kr  
+- **AI-kostnad (GPT-5 Mini, moderat volum)**: ~2 000 kr  
+- **Sum faste kostnader**: **~3 500 kr/mnd**
+
+### 8.2 Betalingsgebyrer
+- **Stripe Billing**: ca. 2,1 % + 2 kr per transaksjon  
+- **Vipps**: 300 kr/mnd fastpris  
+
+### 8.3 Margin-eksempler
+- **300 kunder á 29 kr/mnd** → Resultat ~2 400 kr (ca. 34 % margin etter faste kost)  
+- **3000 kunder á 29 kr/mnd** → Resultat ~58 600 kr (ca. 84 % margin)  
+
+### 8.4 Break-even punkter
+| Pris/mnd | Break-even kunder |
+|----------|------------------|
+| **9 kr**  | ~1000 |
+| **12 kr** | ~1000 |
+| **15 kr** | ~500 |
+| **19 kr** | ~300 |
+| **22 kr** | ~300 |
+| **25 kr** | ~300 |
+| **29 kr** | ~300 |
+| **39 kr** | ~300 |
+| **49 kr** | ~300 |
+| **59 kr** | ~100 |
+
+🔑 **Innsikt:**  
+- Under 15 kr/mnd → trengs stort volum før break-even.  
+- 19–29 kr/mnd → sweet spot (break-even ca. 300 kunder).  
+- 59 kr/mnd → premium-modell, break-even allerede ved 100 kunder.  
+
+---
+
 ## 1000. Changelog
 
 ### v0.2.4 – Chunkmageddon 🧩⚡ (05.09.2025)
