@@ -41,10 +41,11 @@ const encoderCache = new Map<string, any>();
 
 function getEncoder(model: string) {
   try {
-    // Bruk require for å unngå bundling-feil i Edge
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { encoding_for_model } = require("tiktoken");
+    // Bruk eval('require') så Webpack/Vercel ikke prøver å bundle 'tiktoken'
+    const req = eval("require") as NodeRequire;
+    const { encoding_for_model } = req("tiktoken");
     const encModel = resolveEncoderModel(model);
+
     if (encoderCache.has(encModel)) {
       return { enc: encoderCache.get(encModel), encModel };
     }
@@ -52,7 +53,7 @@ function getEncoder(model: string) {
     encoderCache.set(encModel, enc);
     return { enc, encModel };
   } catch {
-    // Fallback – heuristisk teller (ca 4.2 tegn per token)
+    // Fallback – heuristikk (ca. 4.2 tegn per token)
     return {
       enc: {
         encode: (txt: string) =>
