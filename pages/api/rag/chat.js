@@ -4,9 +4,11 @@
 // - Prøver Supabase RPC `match_rag_chunks` (pgvector).
 // - Faller tilbake til enkel tekstsøk (ILIKE) hvis RPC/embeddings ikke er tilgjengelig.
 // - Bruker utils/supabaseServer for konsistent Supabase-klient.
+// - ✅ Nå med Token Guard som trimmer kontekst mot budsjett (uten å endre eksisterende RAG-flyt).
 
 import { OpenAI } from "openai";
 import { getSupabaseServer } from "../../../utils/supabaseServer";
+import { tokenGuard } from "../../../utils/tokenGuard";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -17,6 +19,13 @@ function pickLastUserMessage(messages) {
     if (m?.role === "user" && typeof m.content === "string") return m.content;
   }
   return "";
+}
+
+function collectHistoryTexts(messages) {
+  if (!Array.isArray(messages)) return [];
+  // Legg inn alle tidligere meldinger (uten siste user) som “historikk-tekst”
+  const copy = messages.slice(0, -1);
+  return copy.map((m) => (typeof m?.content === "string" ? m.content : "")).filter(Boolean);
 }
 
 function buildSystemPrompt(contextText) {
@@ -108,7 +117,8 @@ export default async function handler(req, res) {
       minSim = 0.2,
       sourceType = null,    // "ai" | "master" | null (begge)
       model = "gpt-4o",
-      temperature = 0.7
+      temperature = 0.7,
+      budget,               // valgfritt: { maxTokens, replyMax, model }
     } = req.body || {};
 
     if (!messages || !Array.isArray(messages)) {
@@ -123,20 +133,25 @@ export default async function handler(req, res) {
       rag = await retrieveContextFallback(userQuery, { topK, sourceType });
     }
 
-    const system = buildSystemPrompt(rag.contextText);
-    const completion = await openai.chat.completions.create({
-      model,
-      temperature,
-      messages: [{ role: "system", content: system }, ...messages]
+    // ✅ Token Guard: trimm kontekst mot budsjett (vi endrer ikke eksisterende RAG-flyt)
+    const historyMessages = collectHistoryTexts(messages);
+    const contextChunks = rag.contextText ? [rag.contextText] : [];
+    const maxTokens = budget?.maxTokens ?? 8000;
+    const replyMax  = budget?.replyMax  ?? 1200;
+    const modelUsed = budget?.model     ?? model;
+
+    const guard = tokenGuard({
+      systemPrompt: buildSystemPrompt(rag.contextText), // basis m/konk ekst
+      userPrompt: userQuery,
+      contextChunks,            // kan bli kuttet
+      historyMessages,          // teller mot budsjett
+      maxTokens,
+      replyMax,
+      model: modelUsed,
     });
 
-    const reply = completion.choices?.[0]?.message?.content || "";
-    return res.status(200).json({
-      reply,
-      rag: { ai_hits: rag.ai_hits, master_hits: rag.master_hits }
-    });
-  } catch (err) {
-    console.error("[/api/rag/chat] error:", err);
-    return res.status(500).json({ error: String(err?.message || err) });
-  }
-}
+    // Rekonstruer systemprompt basert på inkluderte chunks (trimmet av tokenGuard)
+    const guardedContext = guard.includedChunks?.[0] ?? "";
+    const system = buildSystemPrompt(guardedContext);
+
+    const completion = await openai.chat.completions.create({
