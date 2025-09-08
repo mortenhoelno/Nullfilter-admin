@@ -1,3 +1,4 @@
+// pages/api/chat.js
 import { startPerf } from "../../utils/perf";
 import { getDbClient, vectorQuery, fetchDocsByIds } from "../../utils/rag";
 import { tokenGuard } from "../../utils/tokenGuard";
@@ -22,6 +23,7 @@ export default async function handler(req, res) {
   try {
     mark("req_in");
 
+    // SSE-headere
     res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
     res.setHeader("Cache-Control", "no-cache, no-transform");
     res.setHeader("Connection", "keep-alive");
@@ -29,6 +31,7 @@ export default async function handler(req, res) {
     res.setHeader("Transfer-Encoding", "chunked");
     res.setHeader("Trailer", "Server-Timing");
 
+    // Query params
     const url = new URL(req.url ?? "http://x");
     const qp = Object.fromEntries(url.searchParams);
     const userPrompt = (qp.q ?? "").toString();
@@ -36,11 +39,12 @@ export default async function handler(req, res) {
     const minSim = Number(qp.minSim ?? 0.0);
     const botId = qp.botId ?? "nullfilter";
 
+    // Persona (modell, systemprompt, budsjett)
     const persona = personaConfig[botId];
     if (!persona) throw new Error(`Ukjent botId: ${botId}`);
-
     const { model, systemPrompt, tokenBudget } = persona;
 
+    // DB → vector query → hent docs
     mark("db_connect_start");
     const db = await getDbClient();
     measure("db_connect_end", "db_connect_start");
@@ -53,14 +57,22 @@ export default async function handler(req, res) {
     const docs = await fetchDocsByIds(db, vecRes.ids);
     measure("docs_fetch_end", "docs_fetch_start");
 
+    // Bygg kontekst (prioritert rekkefølge)
     mark("ctx_build_start");
     const contextChunks = docs.map((d, i) => `### Doc ${i + 1}: ${d.title}\n${d.content}`);
     measure("ctx_build_end", "ctx_build_start");
+
+    // ✅ NYTT: regn ut totalbudsjett og gi det til tokenGuard
+    const maxTokens =
+      (tokenBudget?.pinnedMax ?? 0) +
+      (tokenBudget?.ragMax ?? 0) +
+      (tokenBudget?.replyMax ?? 0);
 
     const guard = tokenGuard({
       systemPrompt,
       userPrompt,
       contextChunks,
+      maxTokens,                         // ← viktig
       replyMax: tokenBudget.replyMax,
       model,
     });
@@ -79,6 +91,7 @@ export default async function handler(req, res) {
       return;
     }
 
+    // LLM-kropp
     const llmBody = {
       model,
       stream: true,
@@ -92,6 +105,7 @@ export default async function handler(req, res) {
       temperature: 0.2,
     };
 
+    // Tidlig meta til klient (for perf overlay)
     res.write(
       sseEvent({
         event: "meta",
@@ -105,10 +119,10 @@ export default async function handler(req, res) {
       })
     );
 
+    // Kall LLM (stream)
     mark("llm_req_start");
     const llmReqStartWall = Date.now();
 
-    mark("llm_http_send");
     const resp = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -117,12 +131,14 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify(llmBody),
     });
-    measure("llm_http_send", "llm_req_start");
+
+    mark("llm_http_send");
 
     if (!resp.ok || !resp.body) {
       throw new Error(`LLM HTTP ${resp.status}`);
     }
 
+    // Les stream → videresend SSE
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
 
