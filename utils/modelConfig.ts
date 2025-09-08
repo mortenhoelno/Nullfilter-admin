@@ -1,6 +1,6 @@
 // utils/modelConfig.ts
-// Riktig type-import fra 'tiktoken' (ikke 'tiktoken/model')
-import type { TiktokenModel } from "tiktoken";
+// Forenklet: ikke avhengig av tiktoken-typer i build
+type TiktokenModel = string;
 
 /**
  * Map fra "vilkårlig" modellnavn (f.eks. gpt-5-mini) til en encoder
