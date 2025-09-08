@@ -3,9 +3,7 @@ import { getDbClient, vectorQuery, fetchDocsByIds } from "../../utils/rag";
 import { tokenGuard } from "../../utils/tokenGuard";
 import personaConfig from "../../config/personaConfig";
 
-export const config = {
-  runtime: "nodejs",
-};
+export const config = { runtime: "nodejs" };
 
 function sseEvent({ event, data }) {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
