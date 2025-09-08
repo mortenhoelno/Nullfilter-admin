@@ -1,3 +1,4 @@
+// utils/tokenGuard.ts
 import { encoding_for_model } from "tiktoken";
 import { MODEL_ENCODER_MAP, MODEL_TOKEN_LIMITS } from "./modelConfig";
 
@@ -32,7 +33,7 @@ export function tokenGuard(input: TokenGuardInput) {
     contextChunks = [],
     historyMessages = [],
     replyMax,
-    model = "gpt-5-mini", // <- standardmodell
+    model = "gpt-5-mini",
   } = input;
 
   const enc = getEncoder(model);
