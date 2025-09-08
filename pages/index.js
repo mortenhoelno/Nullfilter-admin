@@ -1,12 +1,13 @@
-// pages/index.js — FERDIG OPPDATERT (med gjenbrukbare komponenter)
+// pages/index.js — OPPDATERT: Prompt-studio + Feature flags på dashboard
 import withAuth from "../components/withAuth";
 import { useEffect, useRef, useState } from "react";
 
-// 🧩 Nye, små gjenbrukskomponenter
 import StatCard from "../components/StatCard";
 import ProgressBar from "../components/ProgressBar";
 import RagSnapshot from "../components/RagSnapshot";
 import ApiPostTester from "../components/ApiPostTester";
+import PromptStudio from "../components/PromptStudio";
+import FlagsPanel from "../components/FlagsPanel";
 
 function HomePage() {
   // === Eksisterende state (chunk-sync + embeddings) ===
@@ -20,7 +21,7 @@ function HomePage() {
   const [autoRunning, setAutoRunning] = useState(false);
   const [processedSoFar, setProcessedSoFar] = useState(0);
   const [startedAt, setStartedAt] = useState(null);
-  const [lastRate, setLastRate] = useState(0); // rows per second (smoothed)
+  const [lastRate, setLastRate] = useState(0);
   const stopFlag = useRef(false);
 
   // === Chat/RAG-statistikk (eksisterende) ===
@@ -31,9 +32,6 @@ function HomePage() {
   const [ragStatus, setRagStatus] = useState(null);
   const [ragLoading, setRagLoading] = useState(false);
   const [ragErr, setRagErr] = useState("");
-
-  // === API POST-test (erstatter <a>-lenker som ga 405) ===
-  // (Flyttet til egen komponent ApiPostTester)
 
   function fmtSeconds(s) {
     if (!isFinite(s) || s < 0) return "—";
@@ -72,15 +70,13 @@ function HomePage() {
     const r = await fetch(`/api/embed-backfill?limit=${encodeURIComponent(String(batch))}`);
     const j = await safeJson(r);
     const t1 = performance.now();
-    const dt = Math.max((t1 - t0) / 1000, 0.001); // s
+    const dt = Math.max((t1 - t0) / 1000, 0.001);
     if (j && j.ok) {
       const rows = Number(j.updated || 0);
-      const rate = rows / dt; // rows per sec
-      // Enkel glatting: 70% forrige + 30% ny
+      const rate = rows / dt;
       setLastRate((prev) => (prev ? prev * 0.7 + rate * 0.3 : rate));
       return rows;
     }
-    // Feil - vis i logg og stopp
     setLog(j);
     return -1;
   }
@@ -113,11 +109,11 @@ function HomePage() {
     let remaining = s.missing;
     while (!stopFlag.current && remaining > 0) {
       const updated = await runBackfillOnce(limit);
-      if (updated < 0) break; // error
+      if (updated < 0) break;
       setProcessedSoFar((prev) => prev + updated);
       remaining -= updated;
       setStats((prev) => ({ ...prev, missing: Math.max(remaining, 0) }));
-      if (updated === 0) break; // ingenting mer å backfille
+      if (updated === 0) break;
     }
 
     setAutoRunning(false);
@@ -127,7 +123,6 @@ function HomePage() {
     stopFlag.current = true;
   }
 
-  // === Hent Chat/RAG-statistikk (eksisterende) ===
   async function fetchChatStats() {
     try {
       const res = await fetch("/api/chat-stats");
@@ -139,7 +134,6 @@ function HomePage() {
     }
   }
 
-  // === Hent RAG snapshot ===
   async function fetchRagStatus() {
     try {
       setRagLoading(true);
@@ -158,14 +152,13 @@ function HomePage() {
   }
 
   useEffect(() => {
-    fetchStats(); // embeddings status
-    fetchChatStats(); // chat/RAG status (aggregater)
-    fetchRagStatus(); // RAG snapshot (total/ai/master/unique)
+    fetchStats();
+    fetchChatStats();
+    fetchRagStatus();
   }, []);
 
-  // ETA-beregning
   const remaining = stats.missing;
-  const rate = lastRate; // rows/sec
+  const rate = lastRate;
   const etaSec = rate > 0 ? remaining / rate : Infinity;
   const elapsedSec = startedAt ? (Date.now() - startedAt) / 1000 : 0;
 
@@ -187,7 +180,7 @@ function HomePage() {
           </a>
         </header>
 
-        {/* 🔗 Hurtigtilgang (inkl. POST-testere) */}
+        {/* 🔗 Hurtigtilgang */}
         <section className="bg-white rounded-2xl shadow p-5">
           <h2 className="text-lg font-semibold mb-3">🔗 Hurtigtilgang</h2>
           <div className="flex flex-wrap gap-3">
@@ -197,16 +190,20 @@ function HomePage() {
             <a href="/chat-keepertrening" className="px-4 py-2 rounded-xl bg-green-600 text-white hover:bg-green-500">
               👉 Keepertrening Chat
             </a>
-
-            {/* POST-tester samlet i egen komponent */}
             <ApiPostTester />
           </div>
         </section>
 
+        {/* 🎛️ Prompt-studio (pkt 6) */}
+        <PromptStudio />
+
+        {/* 🔧 Feature flags (pkt 8) */}
+        <FlagsPanel />
+
         {/* 📚 RAG snapshot */}
         <RagSnapshot data={ragStatus} loading={ragLoading} error={ragErr} onRefresh={fetchRagStatus} />
 
-        {/* 📊 Chat/RAG-statistikk (eksisterende) */}
+        {/* 📊 Chat/RAG-statistikk */}
         <section className="bg-white rounded-2xl shadow p-5">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-lg font-semibold">📊 Chat/RAG-statistikk</h2>
@@ -326,11 +323,10 @@ function HomePage() {
           </div>
         </section>
 
-        {/* 🧠 Embeddings – auto backfill med fremdrift */}
+        {/* 🧠 Embeddings – Backfill med fremdrift */}
         <section className="bg-white rounded-2xl shadow p-5">
           <h2 className="text-lg font-semibold mb-3">🧠 Embeddings – Backfill med fremdrift</h2>
 
-          {/* Stat-kort */}
           <div className="grid sm:grid-cols-4 gap-4 text-sm">
             <StatCard label="Total chunks" value={stats.total} />
             <StatCard label="Mangler embedding" value={stats.missing} />
@@ -338,7 +334,6 @@ function HomePage() {
             <StatCard label="ETA" value={fmtSeconds(etaSec)} sub={`Elapsed: ${fmtSeconds(elapsedSec)}`} />
           </div>
 
-          {/* Progress bar */}
           <div className="mt-3">
             <ProgressBar ratio={stats.total > 0 ? (stats.total - stats.missing) / stats.total : 0} />
             <div className="mt-1 text-xs text-gray-600">
@@ -346,7 +341,6 @@ function HomePage() {
             </div>
           </div>
 
-          {/* Kontroller */}
           <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div className="flex items-center gap-3">
               <label className="text-sm">
