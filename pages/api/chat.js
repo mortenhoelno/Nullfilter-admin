@@ -1,8 +1,7 @@
-
 import { startPerf } from "../../utils/perf";
 import { getDbClient, vectorQuery, fetchDocsByIds } from "../../utils/rag";
 import { tokenGuard } from "../../utils/tokenGuard";
-import { MODEL_TOKEN_LIMITS } from "../../utils/modelConfig";
+import personaConfig from "../../config/personaConfig";
 
 export const config = {
   runtime: "nodejs",
@@ -37,7 +36,12 @@ export default async function handler(req, res) {
     const userPrompt = (qp.q ?? "").toString();
     const topK = Number(qp.topK ?? 6);
     const minSim = Number(qp.minSim ?? 0.0);
-    const model = process.env.OPENAI_MODEL || "gpt-5-mini";
+    const botId = qp.botId ?? "nullfilter";
+
+    const persona = personaConfig[botId];
+    if (!persona) throw new Error(`Ukjent botId: ${botId}`);
+
+    const { model, systemPrompt, tokenBudget } = persona;
 
     mark("db_connect_start");
     const db = await getDbClient();
@@ -55,24 +59,24 @@ export default async function handler(req, res) {
     const contextChunks = docs.map((d, i) => `### Doc ${i + 1}: ${d.title}\n${d.content}`);
     measure("ctx_build_end", "ctx_build_start");
 
-    const systemPrompt = "Du er Null Filter – svar kort, korrekt og vennlig. Bruk bare relevant kontekst.";
-
     const guard = tokenGuard({
       systemPrompt,
       userPrompt,
       contextChunks,
-      replyMax: 512,
+      replyMax: tokenBudget.replyMax,
       model,
     });
 
     if (!guard.isValid) {
-      res.write(sseEvent({
-        event: "error",
-        data: {
-          message: "Prompten ble for lang. Prøv å skrive spørsmålet litt kortere.",
-          droppedChunks: guard.droppedChunks,
-        },
-      }));
+      res.write(
+        sseEvent({
+          event: "error",
+          data: {
+            message: "Prompten ble for lang. Prøv å skrive spørsmålet litt kortere.",
+            droppedChunks: guard.droppedChunks,
+          },
+        })
+      );
       res.end();
       return;
     }
@@ -82,21 +86,26 @@ export default async function handler(req, res) {
       stream: true,
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "user", content: `Kontekst:\n${guard.includedChunks.join("\n\n")}\n\nSpørsmål:\n${userPrompt}` },
+        {
+          role: "user",
+          content: `Kontekst:\n${guard.includedChunks.join("\n\n")}\n\nSpørsmål:\n${userPrompt}`,
+        },
       ],
       temperature: 0.2,
     };
 
-    res.write(sseEvent({
-      event: "meta",
-      data: {
-        timingHint: "init",
-        steps: [...stepLog],
-        rag: { topK, returned: docs.length, minSim },
-        tokens: { input: guard.total },
-        model,
-      },
-    }));
+    res.write(
+      sseEvent({
+        event: "meta",
+        data: {
+          timingHint: "init",
+          steps: [...stepLog],
+          rag: { topK, returned: docs.length, minSim },
+          tokens: { input: guard.total },
+          model,
+        },
+      })
+    );
 
     mark("llm_req_start");
     const llmReqStartWall = Date.now();
