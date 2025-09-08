@@ -174,4 +174,21 @@ export async function fetchDocsByIds(db, ids) {
     title: r.title,
     content: r.content,
   }));
+// utils/rag.js – LEGG TIL HELT NEDERST (behold alt annet som er i fila)
+export async function getRagContext(db, queryText, { topK = 6, minSim = 0.0, sourceType = null } = {}) {
+  // 1) vektorsøk
+  const { ids } = await vectorQuery(db, queryText, { topK, minSim, sourceType });
+
+  // 2) hent dokument-chunks i samme rekkefølge
+  const docs = await fetchDocsByIds(db, ids);
+
+  // 3) bygg kontekstdeler slik UI'en forventer
+  const chunks = docs.map((d, i) => `### Doc ${i + 1}: ${d.title}\n${d.content}`);
+
+  return {
+    docs,          // array med { id, title, content }
+    chunks,        // preformatert tekstblokker
+    meta: { topK, returned: docs.length, minSim, sourceType },
+  };
 }
+
