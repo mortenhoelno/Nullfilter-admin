@@ -1,16 +1,18 @@
-// pages/api/rag/chat.js — FERDIG VERSJON (rag_chunks + match_rag_chunks + fallback + Token Guard)
-// Holder fokus: ÉN ting – RAG-kontekst fra public.rag_chunks inn i chat-svar.
-//
-// - Prøver Supabase RPC `match_rag_chunks` (pgvector).
-// - Faller tilbake til enkel tekstsøk (ILIKE) hvis RPC/embeddings ikke er tilgjengelig.
-// - Bruker utils/supabaseServer for konsistent Supabase-klient.
-// - ✅ Med Token Guard som trimmer kontekst mot budsjett (uten å endre eksisterende RAG-flyt).
-
+// pages/api/rag/chat.js — OPPDATERT: respekterer feature flags (use_token_guard, use_rag_rpc)
 import OpenAI from "openai";
 import { getSupabaseServer } from "../../../utils/supabaseServer";
 import { tokenGuard } from "../../../utils/tokenGuard";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+async function getFlagsKV(supabase) {
+  const out = { use_token_guard: true, use_rag_rpc: true };
+  try {
+    const { data } = await supabase.from("feature_flags").select("key, enabled").in("key", ["use_token_guard", "use_rag_rpc"]);
+    data?.forEach((r) => (out[r.key] = !!r.enabled));
+  } catch {}
+  return out;
+}
 
 function pickLastUserMessage(messages) {
   if (!Array.isArray(messages)) return "";
@@ -23,11 +25,8 @@ function pickLastUserMessage(messages) {
 
 function collectHistoryTexts(messages) {
   if (!Array.isArray(messages)) return [];
-  // Legg inn alle tidligere meldinger (uten siste user) som “historikk-tekst”
   const copy = messages.slice(0, -1);
-  return copy
-    .map((m) => (typeof m?.content === "string" ? m.content : ""))
-    .filter(Boolean);
+  return copy.map((m) => (typeof m?.content === "string" ? m.content : "")).filter(Boolean);
 }
 
 function buildSystemPrompt(contextText) {
@@ -44,9 +43,7 @@ function buildSystemPrompt(contextText) {
   return base.join("\n");
 }
 
-async function retrieveContextRPC(query, { topK, minSim, sourceType }) {
-  const supabase = getSupabaseServer();
-
+async function retrieveContextRPC(supabase, query, { topK, minSim, sourceType }) {
   // Embedding av brukerens spørsmål
   const emb = await openai.embeddings.create({
     model: process.env.EMBEDDINGS_MODEL || "text-embedding-3-small",
@@ -55,7 +52,6 @@ async function retrieveContextRPC(query, { topK, minSim, sourceType }) {
   const vector = emb?.data?.[0]?.embedding;
   if (!Array.isArray(vector)) return { contextText: "", ai_hits: 0, master_hits: 0 };
 
-  // RPC mot rag_chunks
   const { data, error } = await supabase.rpc("match_rag_chunks", {
     query_embedding: vector,
     match_threshold: minSim,
@@ -78,9 +74,7 @@ async function retrieveContextRPC(query, { topK, minSim, sourceType }) {
   return { contextText: parts.join("\n---\n"), ai_hits, master_hits };
 }
 
-async function retrieveContextFallback(query, { topK, sourceType }) {
-  const supabase = getSupabaseServer();
-
+async function retrieveContextFallback(supabase, query, { topK, sourceType }) {
   let q = supabase
     .from("rag_chunks")
     .select("source_type, content")
@@ -110,7 +104,6 @@ export default async function handler(req, res) {
   try {
     if (req.method !== "POST") return res.status(405).json({ error: "Only POST allowed" });
 
-    // Merk: getSupabaseServer() bruker interne env, men vi bevarer denne sjekken slik du hadde den
     if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
       return res.status(500).json({ error: "Supabase creds mangler" });
     }
@@ -118,72 +111,91 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "OPENAI_API_KEY mangler" });
     }
 
-    const {
-      messages,
-      topK = 6,
-      minSim = 0.2,
-      sourceType = null, // "ai" | "master" | null (begge)
-      model = "gpt-4o",
-      temperature = 0.7,
-      budget, // valgfritt: { maxTokens, replyMax, model }
-    } = req.body || {};
-
+    const { messages, topK = 6, minSim = 0.2, sourceType = null, model = "gpt-4o", temperature = 0.7, budget } =
+      req.body || {};
     if (!messages || !Array.isArray(messages)) {
       return res.status(400).json({ error: "Missing or invalid 'messages' array" });
     }
 
+    const supabase = getSupabaseServer();
+    const flags = await getFlagsKV(supabase);
+
     const userQuery = pickLastUserMessage(messages);
 
-    // Hent RAG-kontekst fra rag_chunks (RPC → fallback)
-    let rag = await retrieveContextRPC(userQuery, { topK, minSim, sourceType });
-    if (!rag.contextText) {
-      rag = await retrieveContextFallback(userQuery, { topK, sourceType });
+    // Hent RAG-kontekst
+    let rag;
+    if (flags.use_rag_rpc) {
+      rag = await retrieveContextRPC(supabase, userQuery, { topK, minSim, sourceType });
+      if (!rag.contextText) {
+        rag = await retrieveContextFallback(supabase, userQuery, { topK, sourceType });
+      }
+    } else {
+      rag = await retrieveContextFallback(supabase, userQuery, { topK, sourceType });
     }
 
-    // ✅ Token Guard: trimm kontekst mot budsjett (vi endrer ikke eksisterende RAG-flyt)
-    const historyMessages = collectHistoryTexts(messages);
-    const contextChunks = rag.contextText ? [rag.contextText] : [];
-    const maxTokens = budget?.maxTokens ?? 8000;
-    const replyMax = budget?.replyMax ?? 1200;
-    const modelUsed = budget?.model ?? model;
+    let system, finalMessages = messages;
 
-    const guard = tokenGuard({
-      systemPrompt: buildSystemPrompt(rag.contextText), // basis m/ kontekst
-      userPrompt: userQuery,
-      contextChunks, // kan bli kuttet
-      historyMessages, // teller mot budsjett
-      maxTokens,
-      replyMax,
-      model: modelUsed,
-    });
+    if (flags.use_token_guard) {
+      // Token Guard: trim kontekst
+      const historyMessages = collectHistoryTexts(messages);
+      const contextChunks = rag.contextText ? [rag.contextText] : [];
+      const maxTokens = budget?.maxTokens ?? 8000;
+      const replyMax = budget?.replyMax ?? 1200;
+      const modelUsed = budget?.model ?? model;
 
-    // Rekonstruer systemprompt basert på inkluderte chunks (trimmet av tokenGuard)
-    const guardedContext = guard.includedChunks?.[0] ?? "";
-    const system = buildSystemPrompt(guardedContext);
+      const guard = tokenGuard({
+        systemPrompt: buildSystemPrompt(rag.contextText),
+        userPrompt: userQuery,
+        contextChunks,
+        historyMessages,
+        maxTokens,
+        replyMax,
+        model: modelUsed,
+      });
 
-    const completion = await openai.chat.completions.create({
-      model: modelUsed,
-      temperature,
-      messages: [{ role: "system", content: system }, ...messages],
-    });
+      const guardedContext = guard.includedChunks?.[0] ?? "";
+      system = buildSystemPrompt(guardedContext);
 
-    const reply = completion.choices?.[0]?.message?.content || "";
-    return res.status(200).json({
-      reply,
-      rag: { ai_hits: rag.ai_hits, master_hits: rag.master_hits },
-      tokenGuard: {
-        isValid: guard.isValid,
-        total: guard.total,
-        overflow: guard.overflow,
-        includedCount: guard.includedCount,
-        droppedCount: guard.droppedCount,
-        breakdown: guard.breakdown,
-        meta: guard.meta,
-      },
-      modelUsed,
-      topKUsed: topK,
-      minSimUsed: minSim,
-    });
+      const completion = await openai.chat.completions.create({
+        model: modelUsed,
+        temperature,
+        messages: [{ role: "system", content: system }, ...messages],
+      });
+
+      const reply = completion.choices?.[0]?.message?.content || "";
+      return res.status(200).json({
+        reply,
+        rag: { ai_hits: rag.ai_hits, master_hits: rag.master_hits },
+        tokenGuard: {
+          isValid: guard.isValid,
+          total: guard.total,
+          overflow: guard.overflow,
+          includedCount: guard.includedCount,
+          droppedCount: guard.droppedCount,
+          breakdown: guard.breakdown,
+          meta: guard.meta,
+        },
+        modelUsed,
+        topKUsed: topK,
+        minSimUsed: minSim,
+      });
+    } else {
+      // Uten Token Guard: bruk full kontekst
+      system = buildSystemPrompt(rag.contextText);
+      const completion = await openai.chat.completions.create({
+        model,
+        temperature,
+        messages: [{ role: "system", content: system }, ...finalMessages],
+      });
+      const reply = completion.choices?.[0]?.message?.content || "";
+      return res.status(200).json({
+        reply,
+        rag: { ai_hits: rag.ai_hits, master_hits: rag.master_hits },
+        modelUsed: model,
+        topKUsed: topK,
+        minSimUsed: minSim,
+      });
+    }
   } catch (err) {
     console.error("[/api/rag/chat] error:", err);
     return res.status(500).json({ error: String(err?.message || err) });
