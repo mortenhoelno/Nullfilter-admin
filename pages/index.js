@@ -1,6 +1,12 @@
-// pages/index.js — FERDIG OPPDATERT
+// pages/index.js — FERDIG OPPDATERT (med gjenbrukbare komponenter)
 import withAuth from "../components/withAuth";
 import { useEffect, useRef, useState } from "react";
+
+// 🧩 Nye, små gjenbrukskomponenter
+import StatCard from "../components/StatCard";
+import ProgressBar from "../components/ProgressBar";
+import RagSnapshot from "../components/RagSnapshot";
+import ApiPostTester from "../components/ApiPostTester";
 
 function HomePage() {
   // === Eksisterende state (chunk-sync + embeddings) ===
@@ -21,18 +27,13 @@ function HomePage() {
   const [chatStats, setChatStats] = useState(null);
   const [chatStatsErr, setChatStatsErr] = useState("");
 
-  // === NY: RAG snapshot fra /api/rag/status ===
+  // === RAG snapshot fra /api/rag/status ===
   const [ragStatus, setRagStatus] = useState(null);
   const [ragLoading, setRagLoading] = useState(false);
   const [ragErr, setRagErr] = useState("");
 
-  // === NY: API POST-test (erstatter <a>-lenker som ga 405) ===
-  const [apiTest, setApiTest] = useState({
-    path: "",
-    loading: false,
-    output: null,
-    error: ""
-  });
+  // === API POST-test (erstatter <a>-lenker som ga 405) ===
+  // (Flyttet til egen komponent ApiPostTester)
 
   function fmtSeconds(s) {
     if (!isFinite(s) || s < 0) return "—";
@@ -76,7 +77,7 @@ function HomePage() {
       const rows = Number(j.updated || 0);
       const rate = rows / dt; // rows per sec
       // Enkel glatting: 70% forrige + 30% ny
-      setLastRate(prev => (prev ? prev * 0.7 + rate * 0.3 : rate));
+      setLastRate((prev) => (prev ? prev * 0.7 + rate * 0.3 : rate));
       return rows;
     }
     // Feil - vis i logg og stopp
@@ -113,9 +114,9 @@ function HomePage() {
     while (!stopFlag.current && remaining > 0) {
       const updated = await runBackfillOnce(limit);
       if (updated < 0) break; // error
-      setProcessedSoFar(prev => prev + updated);
+      setProcessedSoFar((prev) => prev + updated);
       remaining -= updated;
-      setStats(prev => ({ ...prev, missing: Math.max(remaining, 0) }));
+      setStats((prev) => ({ ...prev, missing: Math.max(remaining, 0) }));
       if (updated === 0) break; // ingenting mer å backfille
     }
 
@@ -138,7 +139,7 @@ function HomePage() {
     }
   }
 
-  // === NY: Hent RAG snapshot ===
+  // === Hent RAG snapshot ===
   async function fetchRagStatus() {
     try {
       setRagLoading(true);
@@ -157,41 +158,10 @@ function HomePage() {
   }
 
   useEffect(() => {
-    fetchStats();       // embeddings status
-    fetchChatStats();   // chat/RAG status (aggregater)
-    fetchRagStatus();   // RAG snapshot (total/ai/master/unique)
+    fetchStats(); // embeddings status
+    fetchChatStats(); // chat/RAG status (aggregater)
+    fetchRagStatus(); // RAG snapshot (total/ai/master/unique)
   }, []);
-
-  // === NY: POST-testfunksjon for API-knapper ===
-  async function runApiTest(path) {
-    setApiTest({ path, loading: true, output: null, error: "" });
-    try {
-      const res = await fetch(path, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: [
-            { role: "system", content: "Du er en hjelpsom assistent." },
-            { role: "user", content: "Si hei på norsk." }
-          ]
-        })
-      });
-
-      const txt = await res.text();
-      try {
-        const json = JSON.parse(txt);
-        if (!res.ok) throw new Error(json?.error || `HTTP ${res.status}`);
-        setApiTest(prev => ({ ...prev, output: json }));
-      } catch {
-        // Ikke-JSON respons (f.eks. HTML ved serverfeil)
-        setApiTest(prev => ({ ...prev, output: txt }));
-      }
-    } catch (e) {
-      setApiTest(prev => ({ ...prev, error: String(e?.message || e) }));
-    } finally {
-      setApiTest(prev => ({ ...prev, loading: false }));
-    }
-  }
 
   // ETA-beregning
   const remaining = stats.missing;
@@ -217,7 +187,7 @@ function HomePage() {
           </a>
         </header>
 
-        {/* Hurtigtilgang */}
+        {/* 🔗 Hurtigtilgang (inkl. POST-testere) */}
         <section className="bg-white rounded-2xl shadow p-5">
           <h2 className="text-lg font-semibold mb-3">🔗 Hurtigtilgang</h2>
           <div className="flex flex-wrap gap-3">
@@ -228,84 +198,13 @@ function HomePage() {
               👉 Keepertrening Chat
             </a>
 
-            {/* BYTTET fra <a> til POST-knapper */}
-            <button
-              onClick={() => runApiTest("/api/chat")}
-              className="px-4 py-2 rounded-xl bg-slate-900 text-white hover:opacity-90 disabled:opacity-60"
-              disabled={apiTest.loading}
-            >
-              {apiTest.loading && apiTest.path === "/api/chat" ? "Tester…" : "🔎 Test /api/chat (POST)"}
-            </button>
-
-            <button
-              onClick={() => runApiTest("/api/rag/chat")}
-              className="px-4 py-2 rounded-xl bg-slate-900 text-white hover:opacity-90 disabled:opacity-60"
-              disabled={apiTest.loading}
-            >
-              {apiTest.loading && apiTest.path === "/api/rag/chat" ? "Tester…" : "🔎 Test /api/rag/chat (POST)"}
-            </button>
+            {/* POST-tester samlet i egen komponent */}
+            <ApiPostTester />
           </div>
-
-          {/* Resultatvisning for API-test */}
-          {(apiTest.output || apiTest.error) && (
-            <div className="w-full mt-4">
-              <div className="text-sm font-medium mb-1">
-                Resultat for <span className="font-mono">{apiTest.path}</span>
-              </div>
-              {apiTest.error ? (
-                <div className="p-3 bg-rose-50 border border-rose-200 rounded text-rose-700 text-sm">
-                  Feil: {apiTest.error}
-                </div>
-              ) : (
-                <pre className="text-xs bg-black text-green-300 p-3 rounded-xl overflow-auto max-h-80">
-                  {typeof apiTest.output === "string"
-                    ? apiTest.output
-                    : JSON.stringify(apiTest.output, null, 2)}
-                </pre>
-              )}
-            </div>
-          )}
         </section>
 
-        {/* 📚 NY: RAG snapshot fra /api/rag/status */}
-        <section className="bg-white rounded-2xl shadow p-5">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold">📚 RAG – snapshot</h2>
-            <button
-              onClick={fetchRagStatus}
-              className="px-3 py-2 rounded-xl bg-gray-200 hover:bg-gray-300 text-sm"
-            >
-              Oppdater
-            </button>
-          </div>
-
-          {ragLoading && <div className="text-gray-500">Henter RAG-status…</div>}
-          {ragErr && <div className="p-3 bg-rose-50 border border-rose-200 rounded text-rose-700">Feil: {ragErr}</div>}
-
-          {ragStatus?.ok && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="p-4 bg-gray-50 border rounded-2xl">
-                <div className="text-sm text-gray-500">Totalt antall chunks</div>
-                <div className="text-3xl font-bold">{ragStatus.total_chunks}</div>
-              </div>
-              <div className="p-4 bg-gray-50 border rounded-2xl">
-                <div className="text-sm text-gray-500">AI-chunks</div>
-                <div className="text-3xl font-bold">{ragStatus.ai_chunks}</div>
-              </div>
-              <div className="p-4 bg-gray-50 border rounded-2xl">
-                <div className="text-sm text-gray-500">Master-chunks</div>
-                <div className="text-3xl font-bold">{ragStatus.master_chunks}</div>
-              </div>
-              <div className="p-4 bg-gray-50 border rounded-2xl">
-                <div className="text-sm text-gray-500">Unike dokumenter</div>
-                <div className="text-lg font-semibold">
-                  AI: {ragStatus.unique_docs?.ai ?? 0} · Master: {ragStatus.unique_docs?.master ?? 0}
-                </div>
-                <div className="text-sm text-gray-500">Sum: {ragStatus.unique_docs?.total ?? 0}</div>
-              </div>
-            </div>
-          )}
-        </section>
+        {/* 📚 RAG snapshot */}
+        <RagSnapshot data={ragStatus} loading={ragLoading} error={ragErr} onRefresh={fetchRagStatus} />
 
         {/* 📊 Chat/RAG-statistikk (eksisterende) */}
         <section className="bg-white rounded-2xl shadow p-5">
@@ -325,9 +224,7 @@ function HomePage() {
             </div>
           )}
 
-          {!chatStats && !chatStatsErr && (
-            <div className="text-gray-500">Henter RAG/Chat-status…</div>
-          )}
+          {!chatStats && !chatStatsErr && <div className="text-gray-500">Henter RAG/Chat-status…</div>}
 
           {chatStats && (
             <div className="grid md:grid-cols-2 gap-6">
@@ -364,17 +261,29 @@ function HomePage() {
               <section className="bg-gray-50 border rounded-xl p-4">
                 <h3 className="font-semibold mb-2">Chunks & Embeddings (snapshot)</h3>
                 <ul className="text-sm space-y-1">
-                  <li>Total chunks: <span className="font-mono">{chatStats.chunks?.total || 0}</span></li>
-                  <li>Med embedding: <span className="font-mono">{chatStats.chunks?.with_embedding || 0}</span></li>
-                  <li>AI-chunks: <span className="font-mono">{chatStats.chunks?.by_source?.ai || 0}</span></li>
-                  <li>Master-chunks: <span className="font-mono">{chatStats.chunks?.by_source?.master || 0}</span></li>
+                  <li>
+                    Total chunks: <span className="font-mono">{chatStats.chunks?.total || 0}</span>
+                  </li>
+                  <li>
+                    Med embedding: <span className="font-mono">{chatStats.chunks?.with_embedding || 0}</span>
+                  </li>
+                  <li>
+                    AI-chunks: <span className="font-mono">{chatStats.chunks?.by_source?.ai || 0}</span>
+                  </li>
+                  <li>
+                    Master-chunks: <span className="font-mono">{chatStats.chunks?.by_source?.master || 0}</span>
+                  </li>
                 </ul>
 
                 <div className="mt-3 text-sm">
                   <div>Modes (siste 7d):</div>
                   <ul className="list-disc pl-5">
-                    <li>RAG-kall: <span className="font-mono">{chatStats.modes?.rag || 0}</span></li>
-                    <li>Normal: <span className="font-mono">{chatStats.modes?.normal || 0}</span></li>
+                    <li>
+                      RAG-kall: <span className="font-mono">{chatStats.modes?.rag || 0}</span>
+                    </li>
+                    <li>
+                      Normal: <span className="font-mono">{chatStats.modes?.normal || 0}</span>
+                    </li>
                   </ul>
                   <p className="text-xs text-gray-500 mt-2">
                     * “Normal” telles ikke ennå – vi logger primært RAG via <code>rag_usage</code>.
@@ -385,7 +294,7 @@ function HomePage() {
           )}
         </section>
 
-        {/* Chunking */}
+        {/* 🧩 Chunking */}
         <section className="bg-white rounded-2xl shadow p-5">
           <h2 className="text-lg font-semibold mb-3">🧩 Chunking</h2>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -417,44 +326,21 @@ function HomePage() {
           </div>
         </section>
 
-        {/* Embeddings – auto backfill med fremdrift */}
+        {/* 🧠 Embeddings – auto backfill med fremdrift */}
         <section className="bg-white rounded-2xl shadow p-5">
           <h2 className="text-lg font-semibold mb-3">🧠 Embeddings – Backfill med fremdrift</h2>
 
-          {/* Status/Progress */}
+          {/* Stat-kort */}
           <div className="grid sm:grid-cols-4 gap-4 text-sm">
-            <div className="p-3 rounded-xl bg-gray-100">
-              <div className="text-gray-500">Total chunks</div>
-              <div className="text-xl font-semibold">{stats.total}</div>
-            </div>
-            <div className="p-3 rounded-xl bg-gray-100">
-              <div className="text-gray-500">Mangler embedding</div>
-              <div className="text-xl font-semibold">{stats.missing}</div>
-            </div>
-            <div className="p-3 rounded-xl bg-gray-100">
-              <div className="text-gray-500">Hastighet</div>
-              <div className="text-xl font-semibold">{rate ? `${rate.toFixed(1)} r/s` : "—"}</div>
-            </div>
-            <div className="p-3 rounded-xl bg-gray-100">
-              <div className="text-gray-500">ETA</div>
-              <div className="text-xl font-semibold">{fmtSeconds(etaSec)}</div>
-              <div className="text-xs text-gray-500">Elapset: {fmtSeconds(elapsedSec)}</div>
-            </div>
+            <StatCard label="Total chunks" value={stats.total} />
+            <StatCard label="Mangler embedding" value={stats.missing} />
+            <StatCard label="Hastighet" value={lastRate ? `${lastRate.toFixed(1)} r/s` : "—"} />
+            <StatCard label="ETA" value={fmtSeconds(etaSec)} sub={`Elapsed: ${fmtSeconds(elapsedSec)}`} />
           </div>
 
           {/* Progress bar */}
           <div className="mt-3">
-            <div className="h-3 w-full bg-gray-200 rounded-full overflow-hidden">
-              <div
-                className="h-3 bg-indigo-500"
-                style={{
-                  width:
-                    stats.total > 0
-                      ? `${Math.min(100, ((stats.total - stats.missing) / stats.total) * 100).toFixed(1)}%`
-                      : "0%",
-                }}
-              />
-            </div>
+            <ProgressBar ratio={stats.total > 0 ? (stats.total - stats.missing) / stats.total : 0} />
             <div className="mt-1 text-xs text-gray-600">
               {stats.total - stats.missing} / {stats.total} ferdig
             </div>
@@ -492,10 +378,7 @@ function HomePage() {
                   Start auto-backfill
                 </button>
               ) : (
-                <button
-                  onClick={stopAuto}
-                  className="px-4 py-2 rounded-xl bg-rose-600 text-white hover:bg-rose-500"
-                >
+                <button onClick={stopAuto} className="px-4 py-2 rounded-xl bg-rose-600 text-white hover:bg-rose-500">
                   Stopp
                 </button>
               )}
