@@ -1,24 +1,22 @@
 // utils/tokenGuard.ts
 // Fleksibel token-guard med trimming og modell-fallbacks.
-// ⚠️ Bruk denne i API Routes med runtime "nodejs" (tiktoken støttes ikke i Edge).
-import { encoding_for_model } from "tiktoken";
-import type { TiktokenModel } from "tiktoken";
+// ⚠️ Bruk denne i API Routes med runtime "nodejs". tiktoken støttes ikke i Edge.
 import { resolveEncoderModel } from "./modelConfig";
 
 export type TokenGuardInput = {
   systemPrompt: string;
   userPrompt: string;
-  contextChunks?: string[];    // prioritert rekkefølge (viktigst først)
-  historyMessages?: string[];  // frivillig chat-historikk
-  maxTokens: number;           // total context (prompt + svar) for modellen
-  replyMax: number;            // ønsket max tokens i LLM-svar
-  model?: string;              // f.eks. gpt-4o-mini, gpt-5-mini
+  contextChunks?: string[];
+  historyMessages?: string[];
+  maxTokens: number;
+  replyMax: number;
+  model?: string; // f.eks. gpt-5-mini
 };
 
 export type TokenGuardResult = {
   isValid: boolean;
-  total: number;               // total etter ev. trimming
-  overflow: number;            // hvor mye vi var over før trimming
+  total: number;
+  overflow: number;
   includedCount: number;
   includedTokens: number;
   droppedCount: number;
@@ -29,34 +27,49 @@ export type TokenGuardResult = {
     system: number;
     user: number;
     history: number;
-    context: number;           // faktisk brukt kontekst etter trimming
+    context: number;
     replyMax: number;
   };
   meta: {
-    model: string;             // originalt modellnavn
-    encoderModel: TiktokenModel; // hvilken encoder tiktoken bruker
+    model: string;
+    encoderUsed: string; // hvilken encoder som ble brukt
   };
 };
 
-// Intern encoder-cache (unngår å instansiere encoder hver gang)
-const encoderCache = new Map<TiktokenModel, ReturnType<typeof encoding_for_model>>();
+// Cache for encodere
+const encoderCache = new Map<string, any>();
 
 function getEncoder(model: string) {
-  const encModel = resolveEncoderModel(model);
-  if (encoderCache.has(encModel)) return { enc: encoderCache.get(encModel)!, encModel };
-  const enc = encoding_for_model(encModel);
-  encoderCache.set(encModel, enc);
-  return { enc, encModel };
+  try {
+    // Bruk require for å unngå bundling-feil i Edge
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { encoding_for_model } = require("tiktoken");
+    const encModel = resolveEncoderModel(model);
+    if (encoderCache.has(encModel)) {
+      return { enc: encoderCache.get(encModel), encModel };
+    }
+    const enc = encoding_for_model(encModel);
+    encoderCache.set(encModel, enc);
+    return { enc, encModel };
+  } catch {
+    // Fallback – heuristisk teller (ca 4.2 tegn per token)
+    return {
+      enc: {
+        encode: (txt: string) =>
+          Array.from({ length: Math.ceil((txt?.length ?? 0) / 4.2) }),
+      },
+      encModel: "heuristic",
+    };
+  }
 }
 
-export function estimateTokens(text: string, enc: ReturnType<typeof encoding_for_model>): number {
+export function estimateTokens(text: string, enc: any): number {
   if (!text) return 0;
   return enc.encode(text).length;
 }
 
-/** Trim kontekst til den passer budsjettet. Antar chunks er sortert på prioritet (viktigst først). */
 function trimToFit(params: {
-  baseTokens: number;            // system + user + history + replyMax
+  baseTokens: number;
   maxTokens: number;
   chunks: string[];
   chunkTokenCounts: number[];
@@ -84,7 +97,6 @@ function trimToFit(params: {
   return { included, dropped, includedTokens, droppedTokens, total };
 }
 
-/** Hovedfunksjon: beregn tokens, trim kontekst ved behov og returnér detaljert budsjettinfo. */
 export function tokenGuard(input: TokenGuardInput): TokenGuardResult {
   const {
     systemPrompt,
@@ -93,50 +105,44 @@ export function tokenGuard(input: TokenGuardInput): TokenGuardResult {
     historyMessages = [],
     maxTokens,
     replyMax,
-    model = "gpt-4o-mini",
+    model = "gpt-5-mini",
   } = input;
 
   const { enc, encModel } = getEncoder(model);
 
-  const systemTokens  = estimateTokens(systemPrompt, enc);
-  const userTokens    = estimateTokens(userPrompt, enc);
-  const historyTokens = historyMessages.reduce((sum, m) => sum + estimateTokens(m, enc), 0);
-  const chunkTokenCounts = contextChunks.map((c) => estimateTokens(c, enc));
+  const system = estimateTokens(systemPrompt, enc);
+  const user = estimateTokens(userPrompt, enc);
+  const history = historyMessages.reduce(
+    (sum, msg) => sum + estimateTokens(msg, enc),
+    0
+  );
+  const ctxCounts = contextChunks.map((c) => estimateTokens(c, enc));
 
-  const baseTokens = systemTokens + userTokens + historyTokens + replyMax;
-  const sumContext = chunkTokenCounts.reduce((a, b) => a + b, 0);
-  const grandTotal = baseTokens + sumContext;
+  const base = system + user + history + replyMax;
+  const sumCtx = ctxCounts.reduce((a, b) => a + b, 0);
+  const grand = base + sumCtx;
 
-  if (grandTotal <= maxTokens) {
+  if (grand <= maxTokens) {
     return {
       isValid: true,
-      total: grandTotal,
+      total: grand,
       overflow: 0,
       includedCount: contextChunks.length,
-      includedTokens: sumContext,
+      includedTokens: sumCtx,
       droppedCount: 0,
       droppedTokens: 0,
       includedChunks: contextChunks,
       droppedChunks: [],
-      breakdown: {
-        system: systemTokens,
-        user: userTokens,
-        history: historyTokens,
-        context: sumContext,
-        replyMax,
-      },
-      meta: { model, encoderModel: encModel },
+      breakdown: { system, user, history, context: sumCtx, replyMax },
+      meta: { model, encoderUsed: encModel },
     };
   }
 
-  const { included, dropped, includedTokens, droppedTokens, total } = trimToFit({
-    baseTokens,
-    maxTokens,
-    chunks: contextChunks,
-    chunkTokenCounts,
-  });
+  const { included, dropped, includedTokens, droppedTokens, total } = trimToFit(
+    { baseTokens: base, maxTokens, chunks: contextChunks, chunkTokenCounts: ctxCounts }
+  );
 
-  const overflow = Math.max(0, grandTotal - maxTokens);
+  const overflow = Math.max(0, grand - maxTokens);
 
   return {
     isValid: false,
@@ -148,13 +154,7 @@ export function tokenGuard(input: TokenGuardInput): TokenGuardResult {
     droppedTokens,
     includedChunks: included,
     droppedChunks: dropped,
-    breakdown: {
-      system: systemTokens,
-      user: userTokens,
-      history: historyTokens,
-      context: includedTokens,
-      replyMax,
-    },
-    meta: { model, encoderModel: encModel },
+    breakdown: { system, user, history, context: includedTokens, replyMax },
+    meta: { model, encoderUsed: encModel },
   };
 }
