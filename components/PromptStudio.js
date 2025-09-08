@@ -1,249 +1,197 @@
-// components/PromptStudio.js — NY
-import { useEffect, useMemo, useState } from "react";
-import personaConfig from "../config/personaConfig";
-import { useApi } from "../utils/useApi";
-import { useToast } from "../utils/toast";
+// components/PromptStudio.js
+// Lettvekts "prompt-studio" som lar deg teste systemprompt, modell + budsjett
+// mot /api/rag/chat (ingen global endring, bare trygg test i dashbordet).
 
-const BOT_IDS = Object.keys(personaConfig || {});
+import { useState } from "react";
 
-function TextArea({ label, value, onChange, rows = 5 }) {
-  return (
-    <label className="block">
-      <div className="text-sm font-medium text-gray-700 mb-1">{label}</div>
-      <textarea
-        className="w-full border rounded-lg px-3 py-2 text-sm"
-        rows={rows}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      />
-    </label>
-  );
-}
-
-function Input({ label, value, onChange, type = "text", placeholder }) {
-  return (
-    <label className="block">
-      <div className="text-sm font-medium text-gray-700 mb-1">{label}</div>
-      <input
-        type={type}
-        className="w-full border rounded-lg px-3 py-2 text-sm"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-      />
-    </label>
-  );
-}
-
-function NumberInput({ label, value, onChange, min = 0 }) {
-  return (
-    <label className="block">
-      <div className="text-sm font-medium text-gray-700 mb-1">{label}</div>
-      <input
-        type="number"
-        min={min}
-        className="w-full border rounded-lg px-3 py-2 text-sm"
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-      />
-    </label>
-  );
-}
+const DEFAULTS = {
+  systemPrompt:
+    "Du er en varm, presis og hjelpsom assistent. Svar kortfattet, men tydelig, på norsk.",
+  model: "gpt-4o",
+  temperature: 0.2,
+  budget: {
+    maxTokens: 8000,
+    replyMax: 1200,
+    ragMax: 3000,
+    pinnedMax: 1000,
+  },
+};
 
 export default function PromptStudio() {
-  const api = useApi();
-  const { toast } = useToast();
-
-  const [botId, setBotId] = useState(BOT_IDS[0] || "nullfilter");
+  const [systemPrompt, setSystemPrompt] = useState(DEFAULTS.systemPrompt);
+  const [model, setModel] = useState(DEFAULTS.model);
+  const [temperature, setTemperature] = useState(DEFAULTS.temperature);
+  const [budget, setBudget] = useState(DEFAULTS.budget);
+  const [userInput, setUserInput] = useState("Forklar kjapt hva tjenesten gjør.");
   const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [reply, setReply] = useState("");
+  const [ragHits, setRagHits] = useState({ ai_hits: 0, master_hits: 0 });
 
-  // Redigerbare felter
-  const defaults = useMemo(() => personaConfig?.[botId] || {}, [botId]);
-  const [form, setForm] = useState({
-    model: "",
-    systemPrompt: "",
-    themeColor: "",
-    crisisText: "",
-    pinMode: "",
-    pinDocNumbers: "",
-    tokenBudget: { pinnedMax: 0, ragMax: 0, replyMax: 0 },
-  });
+  function updBudget(key, val) {
+    setBudget((b) => ({ ...b, [key]: Number(val) || 0 }));
+  }
 
-  // Hent gjeldende fra API (DB override) → fallback til personaConfig
-  async function load() {
+  async function runTest() {
     setLoading(true);
+    setError("");
+    setReply("");
+    setRagHits({ ai_hits: 0, master_hits: 0 });
     try {
-      const data = await api.get(`/api/persona/get?botId=${encodeURIComponent(botId)}`);
-      const merged = {
-        model: data?.model ?? defaults?.model ?? "",
-        systemPrompt: data?.systemPrompt ?? defaults?.systemPrompt ?? "",
-        themeColor: data?.themeColor ?? defaults?.themeColor ?? "blue",
-        crisisText: data?.crisisText ?? defaults?.crisisText ?? "",
-        pinMode: data?.pinMode ?? defaults?.pinMode ?? "all",
-        pinDocNumbers: (data?.pinDocNumbers ?? defaults?.pinDocNumbers ?? []).join(","),
-        tokenBudget: {
-          pinnedMax: data?.tokenBudget?.pinnedMax ?? defaults?.tokenBudget?.pinnedMax ?? 2000,
-          ragMax: data?.tokenBudget?.ragMax ?? defaults?.tokenBudget?.ragMax ?? 1800,
-          replyMax: data?.tokenBudget?.replyMax ?? defaults?.tokenBudget?.replyMax ?? 1200,
-        },
-      };
-      setForm(merged);
-    } catch {
-      // useApi toaster feilen allerede
-      setForm({
-        model: defaults?.model ?? "",
-        systemPrompt: defaults?.systemPrompt ?? "",
-        themeColor: defaults?.themeColor ?? "blue",
-        crisisText: defaults?.crisisText ?? "",
-        pinMode: defaults?.pinMode ?? "all",
-        pinDocNumbers: (defaults?.pinDocNumbers ?? []).join(","),
-        tokenBudget: {
-          pinnedMax: defaults?.tokenBudget?.pinnedMax ?? 2000,
-          ragMax: defaults?.tokenBudget?.ragMax ?? 1800,
-          replyMax: defaults?.tokenBudget?.replyMax ?? 1200,
-        },
+      const res = await fetch("/api/rag/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userInput },
+          ],
+          model,
+          temperature,
+          // NB: backend /api/rag/chat støtter `budget` allerede
+          budget: {
+            maxTokens: budget.maxTokens,
+            replyMax: budget.replyMax,
+          },
+          // RAG-parametre (kan evt. justeres her hvis ønskelig)
+          topK: 6,
+          minSim: 0.2,
+        }),
       });
+
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || `HTTP ${res.status}`);
+      setReply(json?.reply || "");
+      setRagHits(json?.rag || { ai_hits: 0, master_hits: 0 });
+    } catch (e) {
+      setError(String(e?.message || e));
     } finally {
       setLoading(false);
     }
   }
 
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [botId]);
-
-  async function save() {
-    setSaving(true);
-    try {
-      const patch = {
-        model: form.model,
-        systemPrompt: form.systemPrompt,
-        themeColor: form.themeColor,
-        crisisText: form.crisisText,
-        pinMode: form.pinMode,
-        pinDocNumbers: form.pinDocNumbers
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean)
-          .map((s) => Number(s))
-          .filter((n) => Number.isFinite(n)),
-        tokenBudget: {
-          pinnedMax: Number(form.tokenBudget.pinnedMax || 0),
-          ragMax: Number(form.tokenBudget.ragMax || 0),
-          replyMax: Number(form.tokenBudget.replyMax || 0),
-        },
-      };
-      await api.post("/api/persona/save", { botId, patch });
-      toast("Lagret 🎉", { type: "success" });
-    } catch {
-      // toast allerede fra useApi
-    } finally {
-      setSaving(false);
-    }
-  }
-
   return (
     <section className="bg-white rounded-2xl shadow p-5">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold">🎛️ Prompt-studio</h2>
-        <div className="flex items-center gap-2">
-          <label className="text-sm">
-            Bot:
-            <select
-              className="ml-2 border rounded-lg px-2 py-1 text-sm"
-              value={botId}
-              onChange={(e) => setBotId(e.target.value)}
-            >
-              {BOT_IDS.map((id) => (
-                <option key={id} value={id}>
-                  {id}
-                </option>
-              ))}
-            </select>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-lg font-semibold">🎛️ Prompt-studio (preview)</h2>
+        <button
+          onClick={runTest}
+          disabled={loading}
+          className="px-3 py-2 rounded-xl bg-slate-900 text-white hover:opacity-90 disabled:opacity-60 text-sm"
+        >
+          {loading ? "Kjører…" : "Kjør test"}
+        </button>
+      </div>
+
+      {/* Inputs */}
+      <div className="grid md:grid-cols-2 gap-5">
+        <div className="space-y-3">
+          <label className="block text-sm">
+            <span className="font-medium">System-prompt</span>
+            <textarea
+              className="mt-1 w-full border rounded-xl p-3 text-sm min-h-[120px]"
+              value={systemPrompt}
+              onChange={(e) => setSystemPrompt(e.target.value)}
+            />
           </label>
-          <button
-            onClick={load}
-            className="px-3 py-2 rounded-xl bg-gray-200 hover:bg-gray-300 text-sm"
-            disabled={loading}
-          >
-            Oppdater
-          </button>
+
+          <label className="block text-sm">
+            <span className="font-medium">Bruker-input</span>
+            <textarea
+              className="mt-1 w-full border rounded-xl p-3 text-sm min-h-[80px]"
+              value={userInput}
+              onChange={(e) => setUserInput(e.target.value)}
+            />
+          </label>
+        </div>
+
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block text-sm">
+              <span className="font-medium">Modell</span>
+              <select
+                className="mt-1 w-full border rounded-xl p-2"
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+              >
+                <option value="gpt-4o">gpt-4o</option>
+                <option value="gpt-4o-mini">gpt-4o-mini</option>
+                <option value="gpt-4.1">gpt-4.1</option>
+                <option value="gpt-4.1-mini">gpt-4.1-mini</option>
+              </select>
+            </label>
+
+            <label className="block text-sm">
+              <span className="font-medium">Temperature</span>
+              <input
+                type="number"
+                min={0}
+                max={2}
+                step={0.1}
+                className="mt-1 w-full border rounded-xl p-2"
+                value={temperature}
+                onChange={(e) => setTemperature(Number(e.target.value))}
+              />
+            </label>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block text-sm">
+              <span className="font-medium">maxTokens</span>
+              <input
+                type="number"
+                className="mt-1 w-full border rounded-xl p-2"
+                value={budget.maxTokens}
+                onChange={(e) => updBudget("maxTokens", e.target.value)}
+              />
+            </label>
+            <label className="block text-sm">
+              <span className="font-medium">replyMax</span>
+              <input
+                type="number"
+                className="mt-1 w-full border rounded-xl p-2"
+                value={budget.replyMax}
+                onChange={(e) => updBudget("replyMax", e.target.value)}
+              />
+            </label>
+          </div>
+
+          <p className="text-xs text-gray-500">
+            * RAG-budsjett (ragMax/pinnedMax) holdes utenfor her nå – vi lar
+            backenden bestemme via `topK`/`minSim` og token-guard i API.
+          </p>
         </div>
       </div>
 
-      {loading ? (
-        <div className="text-gray-500">Laster data…</div>
-      ) : (
-        <div className="grid md:grid-cols-2 gap-4">
-          <Input label="Modell" value={form.model} onChange={(v) => setForm((f) => ({ ...f, model: v }))} />
-          <Input
-            label="Theme color"
-            value={form.themeColor}
-            onChange={(v) => setForm((f) => ({ ...f, themeColor: v }))}
-            placeholder="blue | green | …"
-          />
-          <Input
-            label="Pin mode"
-            value={form.pinMode}
-            onChange={(v) => setForm((f) => ({ ...f, pinMode: v }))}
-            placeholder="all | none | selected"
-          />
-          <Input
-            label="Pin doc numbers (kommaseparert)"
-            value={form.pinDocNumbers}
-            onChange={(v) => setForm((f) => ({ ...f, pinDocNumbers: v }))}
-            placeholder="1,50"
-          />
-          <TextArea
-            label="System prompt"
-            value={form.systemPrompt}
-            onChange={(v) => setForm((f) => ({ ...f, systemPrompt: v }))}
-            rows={8}
-          />
-          <TextArea
-            label="Crisis text"
-            value={form.crisisText}
-            onChange={(v) => setForm((f) => ({ ...f, crisisText: v }))}
-            rows={8}
-          />
+      {/* Output */}
+      <div className="mt-4">
+        {error && (
+          <div className="p-3 bg-rose-50 border border-rose-200 rounded text-rose-700 text-sm">
+            Feil: {error}
+          </div>
+        )}
 
-          <div className="grid grid-cols-3 gap-3 md:col-span-2">
-            <NumberInput
-              label="Token budget – pinnedMax"
-              value={form.tokenBudget.pinnedMax}
-              onChange={(v) => setForm((f) => ({ ...f, tokenBudget: { ...f.tokenBudget, pinnedMax: v } }))}
-              min={0}
-            />
-            <NumberInput
-              label="Token budget – ragMax"
-              value={form.tokenBudget.ragMax}
-              onChange={(v) => setForm((f) => ({ ...f, tokenBudget: { ...f.tokenBudget, ragMax: v } }))}
-              min={0}
-            />
-            <NumberInput
-              label="Token budget – replyMax"
-              value={form.tokenBudget.replyMax}
-              onChange={(v) => setForm((f) => ({ ...f, tokenBudget: { ...f.tokenBudget, replyMax: v } }))}
-              min={0}
-            />
+        <div className="grid md:grid-cols-3 gap-4">
+          <div className="md:col-span-2">
+            <div className="text-sm font-medium mb-1">Svar</div>
+            <pre className="text-sm bg-black text-green-300 p-3 rounded-xl overflow-auto max-h-72 whitespace-pre-wrap">
+              {reply || (loading ? "Venter på svar…" : "—")}
+            </pre>
           </div>
 
-          <div className="md:col-span-2 flex items-center gap-3">
-            <button
-              onClick={save}
-              disabled={saving}
-              className="px-4 py-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-60"
-            >
-              {saving ? "Lagrer…" : "Lagre endringer"}
-            </button>
-            <div className="text-xs text-gray-500">
-              Endringer lagres i DB og overstyrer personaConfig (fallback hvis tom).
+          <div>
+            <div className="text-sm font-medium mb-1">RAG-treff</div>
+            <div className="p-3 bg-gray-50 border rounded-xl text-sm">
+              <div>AI-chunks: <span className="font-mono">{ragHits.ai_hits}</span></div>
+              <div>Master-chunks: <span className="font-mono">{ragHits.master_hits}</span></div>
             </div>
+            <p className="mt-2 text-xs text-gray-500">
+              * Rent preview – endrer ikke global persona. Perfekt for
+              å iterere uten deploy.
+            </p>
           </div>
         </div>
-      )}
+      </div>
     </section>
   );
 }
