@@ -62,7 +62,7 @@ export default async function handler(req, res) {
     const contextChunks = docs.map((d, i) => `### Doc ${i + 1}: ${d.title}\n${d.content}`);
     measure("ctx_build_end", "ctx_build_start");
 
-    // ✅ NYTT: regn ut totalbudsjett og gi det til tokenGuard
+    // ✅ Token Guard med budsjett fra persona (ingen endring i modell/flow)
     const maxTokens =
       (tokenBudget?.pinnedMax ?? 0) +
       (tokenBudget?.ragMax ?? 0) +
@@ -72,7 +72,7 @@ export default async function handler(req, res) {
       systemPrompt,
       userPrompt,
       contextChunks,
-      maxTokens,                         // ← viktig
+      maxTokens,
       replyMax: tokenBudget.replyMax,
       model,
     });
@@ -115,6 +115,12 @@ export default async function handler(req, res) {
           rag: { topK, returned: docs.length, minSim },
           tokens: { input: guard.total },
           model,
+          tokenGuard: {
+            isValid: guard.isValid,
+            includedCount: guard.includedCount,
+            droppedCount: guard.droppedCount,
+            overflow: guard.overflow,
+          },
         },
       })
     );
