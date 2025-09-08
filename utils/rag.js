@@ -174,6 +174,8 @@ export async function fetchDocsByIds(db, ids) {
     title: r.title,
     content: r.content,
   }));
+}
+
 // utils/rag.js – LEGG TIL HELT NEDERST (behold alt annet som er i fila)
 export async function getRagContext(db, queryText, { topK = 6, minSim = 0.0, sourceType = null } = {}) {
   // 1) vektorsøk
