@@ -1,9 +1,10 @@
-// pages/index.js — FERDIG OPPDATERT (med PromptStudio + FeatureFlagsPanel)
+// pages/index.js — OPPDATERT: begge Prompt-studioer + forklaringer + alt eksisterende
 import withAuth from "../components/withAuth";
 import { useEffect, useRef, useState } from "react";
 
-// ⬇️ NYE komponenter
-import PromptStudio from "../components/PromptStudio";
+// 👇 nye komponenter (sørg for at disse filene finnes i /components)
+import PromptStudioFull from "../components/PromptStudioFull";
+import PromptStudioPreview from "../components/PromptStudioPreview";
 import FeatureFlagsPanel from "../components/FeatureFlagsPanel";
 
 function HomePage() {
@@ -25,12 +26,12 @@ function HomePage() {
   const [chatStats, setChatStats] = useState(null);
   const [chatStatsErr, setChatStatsErr] = useState("");
 
-  // === NY: RAG snapshot fra /api/rag/status ===
+  // === RAG snapshot fra /api/rag/status ===
   const [ragStatus, setRagStatus] = useState(null);
   const [ragLoading, setRagLoading] = useState(false);
   const [ragErr, setRagErr] = useState("");
 
-  // === NY: API POST-test (erstatter <a>-lenker som ga 405) ===
+  // === API POST-test (brukes til raske kall) ===
   const [apiTest, setApiTest] = useState({
     path: "",
     loading: false,
@@ -79,11 +80,9 @@ function HomePage() {
     if (j && j.ok) {
       const rows = Number(j.updated || 0);
       const rate = rows / dt; // rows per sec
-      // Enkel glatting: 70% forrige + 30% ny
       setLastRate(prev => (prev ? prev * 0.7 + rate * 0.3 : rate));
       return rows;
     }
-    // Feil - vis i logg og stopp
     setLog(j);
     return -1;
   }
@@ -142,7 +141,7 @@ function HomePage() {
     }
   }
 
-  // === NY: Hent RAG snapshot ===
+  // === Hent RAG snapshot ===
   async function fetchRagStatus() {
     try {
       setRagLoading(true);
@@ -166,7 +165,7 @@ function HomePage() {
     fetchRagStatus();   // RAG snapshot (total/ai/master/unique)
   }, []);
 
-  // === NY: POST-testfunksjon for API-knapper ===
+  // === POST-test (hurtigkall) ===
   async function runApiTest(path) {
     setApiTest({ path, loading: true, output: null, error: "" });
     try {
@@ -187,7 +186,6 @@ function HomePage() {
         if (!res.ok) throw new Error(json?.error || `HTTP ${res.status}`);
         setApiTest(prev => ({ ...prev, output: json }));
       } catch {
-        // Ikke-JSON respons (f.eks. HTML ved serverfeil)
         setApiTest(prev => ({ ...prev, output: txt }));
       }
     } catch (e) {
@@ -221,6 +219,16 @@ function HomePage() {
           </a>
         </header>
 
+        {/* ℹ️ Forklaring */}
+        <section className="bg-white rounded-2xl shadow p-5">
+          <h2 className="text-lg font-semibold mb-2">ℹ️ Om dashboardet</h2>
+          <ul className="list-disc pl-6 text-sm text-gray-700 space-y-1">
+            <li><strong>Prompt-studio (konfig)</strong> – lagrer botoppsett (DB/minne).</li>
+            <li><strong>Prompt-studio (preview)</strong> – sandbox med «Bruker-input» + «Kjør test». Svaret vises her.</li>
+            <li><strong>Feature flags</strong> – slå funksjoner av/på for trygg testing.</li>
+          </ul>
+        </section>
+
         {/* Hurtigtilgang */}
         <section className="bg-white rounded-2xl shadow p-5">
           <h2 className="text-lg font-semibold mb-3">🔗 Hurtigtilgang</h2>
@@ -232,7 +240,7 @@ function HomePage() {
               👉 Keepertrening Chat
             </a>
 
-            {/* POST-knapper */}
+            {/* POST-knapper for raske API-tester */}
             <button
               onClick={() => runApiTest("/api/chat")}
               className="px-4 py-2 rounded-xl bg-slate-900 text-white hover:opacity-90 disabled:opacity-60"
@@ -270,7 +278,16 @@ function HomePage() {
           )}
         </section>
 
-        {/* 📚 RAG snapshot fra /api/rag/status */}
+        {/* 🎛️ Prompt-studio (konfig) – lagrer */}
+        <PromptStudioFull />
+
+        {/* 🧪 Prompt-studio (preview) – sandbox med «Bruker-input» */}
+        <PromptStudioPreview />
+
+        {/* 🔁 Feature flags */}
+        <FeatureFlagsPanel />
+
+        {/* 📚 RAG snapshot */}
         <section className="bg-white rounded-2xl shadow p-5">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-lg font-semibold">📚 RAG – snapshot</h2>
@@ -388,13 +405,7 @@ function HomePage() {
           )}
         </section>
 
-        {/* 🧠 Prompt-studio (pkt. 6) */}
-        <PromptStudio />
-
-        {/* 🔁 Feature flags (pkt. 8) */}
-        <FeatureFlagsPanel />
-
-        {/* Chunking */}
+        {/* 🧩 Chunking */}
         <section className="bg-white rounded-2xl shadow p-5">
           <h2 className="text-lg font-semibold mb-3">🧩 Chunking</h2>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -426,7 +437,7 @@ function HomePage() {
           </div>
         </section>
 
-        {/* Embeddings – auto backfill med fremdrift */}
+        {/* 🧠 Embeddings – auto backfill med fremdrift */}
         <section className="bg-white rounded-2xl shadow p-5">
           <h2 className="text-lg font-semibold mb-3">🧠 Embeddings – Backfill med fremdrift</h2>
 
