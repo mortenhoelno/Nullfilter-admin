@@ -1,7 +1,7 @@
-// pages/api/rag/chat.js — Oppdatert versjon med pinnedDocId støtte fra personaConfig
+// pages/api/rag/chat.js — Oppdatert til å bruke getRagContext + embedding
 
-import { OpenAI } from "openai";
-import { getSupabaseServer } from "../../../utils/supabaseServer";
+import OpenAI from "openai";
+import { getDbClient, getRagContext } from "../../../utils/rag";
 import personaConfig from "../../../config/personaConfig";
 import { tokenGuard } from "../../../utils/tokenGuard";
 import { buildPrompt } from "../../../utils/buildPrompt";
@@ -23,50 +23,10 @@ function collectHistory(messages) {
   return messages.slice(0, -1).filter((m) => m?.content?.trim());
 }
 
-async function fetchPinnedChunks(docId) {
-  const sb = getSupabaseServer();
-  const { data, error } = await sb
-    .from("rag_chunks")
-    .select("content")
-    .eq("doc_id", docId)
-    .order("chunk_index", { ascending: true });
-  if (error || !data) return [];
-  return data.map((row) => row.content || "");
-}
-
-async function retrieveContext(query, { topK, minSim, sourceType }) {
-  const sb = getSupabaseServer();
-  const emb = await openai.embeddings.create({
-    model: process.env.EMBEDDINGS_MODEL || "text-embedding-3-small",
-    input: query,
-  });
-  const vector = emb?.data?.[0]?.embedding;
-  if (!Array.isArray(vector)) return { chunks: [], ai_hits: 0, master_hits: 0 };
-
-  const { data, error } = await sb.rpc("match_rag_chunks", {
-    query_embedding: vector,
-    match_threshold: minSim,
-    match_count: topK,
-    wanted_source_type: sourceType || null,
-  });
-  if (error || !data) return { chunks: [], ai_hits: 0, master_hits: 0 };
-
-  let ai_hits = 0,
-    master_hits = 0;
-  const chunks = [];
-  for (const row of data) {
-    const st = (row.source_type || "").toLowerCase();
-    if (st === "ai") ai_hits++;
-    else if (st === "master") master_hits++;
-    chunks.push(row.content || "");
-  }
-  return { chunks, ai_hits, master_hits };
-}
-
 export default async function handler(req, res) {
   try {
     if (req.method !== "POST") return res.status(405).json({ error: "Only POST allowed" });
-    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY || !process.env.OPENAI_API_KEY) {
+    if (!process.env.DB_HTTP_URL || !process.env.DB_HTTP_TOKEN || !process.env.OPENAI_API_KEY) {
       return res.status(500).json({ error: "Missing required environment variables" });
     }
 
@@ -90,18 +50,26 @@ export default async function handler(req, res) {
     const userQuery = pickLastUserMessage(messages);
     const history = collectHistory(messages);
 
+    // Pinned chunks (samme som før)
     let pinnedChunks = [];
     if (persona.pinnedDocId) {
-      pinnedChunks = await fetchPinnedChunks(persona.pinnedDocId);
+      const db = await getDbClient();
+      const { rows } = await db.query("fetch_docs", { ids: [persona.pinnedDocId] });
+      pinnedChunks = rows.map((r) => r.content || "");
     }
 
-    const rag = await retrieveContext(userQuery, {
-      topK: topK - pinnedChunks.length,
-      minSim,
-      sourceType,
+    // 🔄 Generer embedding for brukerens query
+    const emb = await openai.embeddings.create({
+      model: process.env.EMBEDDINGS_MODEL || "text-embedding-3-small",
+      input: userQuery,
     });
+    const queryEmbedding = emb?.data?.[0]?.embedding;
 
-    const allChunks = [...pinnedChunks, ...rag.chunks];
+    // 🔄 Hent RAG-kontekst via Edge Function
+    const db = await getDbClient();
+    const ragRes = await getRagContext(db, queryEmbedding, { topK: topK - pinnedChunks.length, minSim, sourceType });
+
+    const allChunks = [...pinnedChunks, ...ragRes.chunks];
     const contextText = allChunks.join("\n---\n");
 
     const promptPack = buildPrompt({
@@ -131,7 +99,7 @@ export default async function handler(req, res) {
     if (!guard.isValid) {
       return res.status(200).json({
         reply: "Meldingen din + konteksten ble litt for stor for denne modellen. Prøv å spørre litt kortere! 😊",
-        rag: { ai_hits: rag.ai_hits, master_hits: rag.master_hits },
+        rag: { ai_hits: 0, master_hits: 0 }, // teller ikke chunks her
         tokenGuard: guard,
         modelUsed: promptPack.model,
         fallbackHit: false,
@@ -152,7 +120,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       reply: result.reply || "",
-      rag: { ai_hits: rag.ai_hits, master_hits: rag.master_hits },
+      rag: { ai_hits: ragRes.meta?.returned ?? 0, master_hits: 0 },
       tokenGuard: guard,
       modelUsed: result.modelUsed,
       fallbackHit: result.fallbackHit,
