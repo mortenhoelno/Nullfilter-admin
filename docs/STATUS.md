@@ -106,6 +106,34 @@
 - **pinnedDocId** → dokumentchunks som alltid inkluderes
 - **response_ms** → målt svartid per melding
 
+###🔎 Prompt-struktur med global pinned dokument
+
+Når en bot (f.eks. NullFilter eller Keepertrening) bygger systemprompten, ser rekkefølgen slik ut:
+
+```text
+[ SYSTEMPROMPT FRA PERSONA ]
+"Du er en vennlig og kunnskapsrik chatbot ..."
+
+--- GLOBAL PINNED DOC (Mini-Morten) ---
+### Doc G1: Mini-Morten
+<innhold fra pinned-dokumentet, alltid inkludert>
+
+### Doc G2: Mini-Morten
+<neste chunk fra samme dokument ...>
+
+--- PERSONA PINNED DOC (valgfritt, hvis satt i personaConfig) ---
+### Doc P1: KeeperTrening Manual
+<chunks fra dokument persona er låst til>
+
+--- RAG-DOKUMENTER (hentet dynamisk via embeddings) ---
+### Doc R1: AI_mini_Morten
+<relevant innhold hentet fra embeddingsøk>
+
+### Doc R2: MASTER_Hjernen_vaner_endring
+<mer innhold hentet dynamisk>
+
+--- BRUKERMELDING ---
+User: "Hvordan kan jeg roe meg ned når tankene spinner?"
 ---
 
 ## 5. Neste steg
