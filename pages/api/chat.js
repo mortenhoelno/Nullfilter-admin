@@ -1,12 +1,15 @@
 // pages/api/chat.js
 import { startPerf } from "../../utils/perf";
-import { getDbClient, vectorQuery, fetchDocsByIds } from "../../utils/rag";
+import { getDbClient, getRagContext } from "../../utils/rag"; // 🔄 bruker getRagContext nå
 import { tokenGuard } from "../../utils/tokenGuard";
 import personaConfig from "../../config/personaConfig";
 
 // ⬇️ Nye utiler (bevarer eksisterende adferd, bare ryddigere)
 import { buildPrompt } from "../../utils/buildPrompt";
 import { streamFetchChat } from "../../utils/llmClient";
+
+// 🔄 Import for å generere embedding
+import OpenAI from "openai";
 
 export const config = { runtime: "nodejs" };
 
@@ -54,11 +57,9 @@ export default async function handler(req, res) {
     res.setHeader("Transfer-Encoding", "chunked");
     res.setHeader("Trailer", "Server-Timing");
 
-    // Robust URL-parsing m/ base (fikser "Invalid URL" ved POST)
     const absBase = getBaseUrl(req);
     const url = new URL(req.url || "/api/chat", absBase);
 
-    // Støtt både GET (?q=) og POST ({ q } | { messages })
     const qp = Object.fromEntries(url.searchParams);
     const body = (req.method === "POST" && typeof req.body === "object") ? req.body : {};
 
@@ -71,10 +72,17 @@ export default async function handler(req, res) {
     const minSim = Number((body?.minSim ?? qp.minSim) ?? 0.0);
     const botId = (body?.botId ?? qp.botId) || "nullfilter";
 
-    // Persona (modell, systemprompt, budsjett)
     const persona = personaConfig[botId];
     if (!persona) throw new Error(`Ukjent botId: ${botId}`);
     const { tokenBudget } = persona;
+
+    // 🔄 Generer embedding for brukerens prompt
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    const embRes = await openai.embeddings.create({
+      model: "text-embedding-3-small",
+      input: userPrompt,
+    });
+    const queryEmbedding = embRes.data[0].embedding;
 
     // DB → vector query → hent docs
     mark("db_connect_start");
@@ -82,17 +90,11 @@ export default async function handler(req, res) {
     measure("db_connect_end", "db_connect_start");
 
     mark("rag_query_start");
-    const vecRes = await vectorQuery(db, userPrompt, { topK, minSim });
+    const ragRes = await getRagContext(db, queryEmbedding, { topK, minSim });
     measure("rag_query_end", "rag_query_start");
 
-    mark("docs_fetch_start");
-    const docs = await fetchDocsByIds(db, vecRes.ids);
-    measure("docs_fetch_end", "docs_fetch_start");
-
-    // Bygg kontekst (prioritert rekkefølge)
-    mark("ctx_build_start");
-    const contextChunks = docs.map((d, i) => `### Doc ${i + 1}: ${d.title}\n${d.content}`);
-    measure("ctx_build_end", "ctx_build_start");
+    const docs = ragRes.docs;
+    const contextChunks = ragRes.chunks;
 
     // Budsjett til tokenGuard (fra personaConfig)
     const maxTokens =
@@ -105,15 +107,14 @@ export default async function handler(req, res) {
       persona,
       userPrompt,
       contextChunks,
-      history: [],            // vi har ikke historikk i denne route-varianten
+      history: [], // ingen historikk her
     });
 
-    // TokenGuard bruker eksakt system-tekst og replyMax fra persona
     const guard = tokenGuard({
       systemPrompt: promptPack.messages[0]?.content || "",
       userPrompt,
       contextChunks,
-      historyMessages: [],    // ingen historikk her
+      historyMessages: [],
       maxTokens,
       replyMax: persona?.tokenBudget?.replyMax ?? 1200,
       model: promptPack.model,
@@ -133,8 +134,6 @@ export default async function handler(req, res) {
       return;
     }
 
-    // Stream til OpenAI – samme mønster som før (SSE ut til klient)
-    // Vi bruker llmClient.streamFetchChat for å bygge korrekt request.
     res.write(
       sseEvent({
         event: "meta",
@@ -163,7 +162,6 @@ export default async function handler(req, res) {
       throw new Error(`LLM HTTP ${resp.status}`);
     }
 
-    // Les stream → videresend SSE
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
 
