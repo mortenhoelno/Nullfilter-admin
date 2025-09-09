@@ -4,50 +4,49 @@
 - **09.09.2025**
 
 ### Versjon
-- **v0.2.7 – Prompt Engine Online ⚙️🧠**
+- **v0.2.8 – Smooth Operator 💅🚀**
 
 ---
 
 ## Siste endringer
-- ✅ `buildPrompt()` og `llmClient.ts` er i full bruk – alle chatkall bruker nå sanntidsbudsjett og fallback via `personaConfig`.
-- ✅ NullFilter og Keepertrening har fullt støtte for intro, e-post, minne og visuell stil via `personaConfig`.
-- ✅ Alle samtaler logges med `chat_sessions` og `chat_messages`, og bruker `persona.slug`.
-- ✅ RAG og vanlig chat leverer konsistente svar – `systemPrompt` og `context` bygges fra samme kilde.
-- ✅ RAG-støtte for pinned chunks (`pinnedDocId`) fra `personaConfig`.
-- ✅ GitHub Actions CI er fjernet for enklere drift i Vercel.
+- ✅ Responstid (`response_ms`) logges per melding i `chat_messages`.
+- ✅ `utils/clientPerf.js` utvidet med måling → `ChatEngine.js` kobler perf til `onSend`.
+- ✅ NullFilter og Keepertrening oppdatert slik at `saveMessage()` lagrer responstid.
+- ✅ `personaConfig.js` utvidet med `intro` og `starters` → begge bots viser åpningslinje + bobler.
+- ✅ NullFilter og Keepertrening testet: bobler, intro, minne og logging fungerer.
+- ✅ Deploy fullført i Vercel uten feil (clientPerf.js fikset).
+- ⚠️ Observability (modellvalg, fallback-rate osv.) fortsatt TODO.
 
 ---
 
 ## 1. Filstruktur (nivå 1–2 + viktige filer)
 
 - **pages/**
-  - index.js — Hovedside, lenke til admin og systemstatus
-  - admin.js — Admin-grensesnitt for dokumentopplasting og tagging
-  - **chat-nullfilter/** — NullFilter-chatbot (mental helse)
-  - **chat-keepertrening/** — Keepertrening-chatbot (idrett)
+  - index.js — Hovedside, lenke til admin
+  - admin.js — Admin-grensesnitt (dokumenter)
+  - **chat-nullfilter/** — NullFilter-chatbot (mental helse, intro + bobler)
+  - **chat-keepertrening/** — Keepertrening-chatbot (idrett, intro + bobler)
   - **api/**
-    - chat.js — Chat-endepunkt (OpenAI GPT-5)
+    - chat.js — Chat-endepunkt (OpenAI GPT-5 med fallback)
     - rag/chat.js — Chat med RAG og dokumentstøtte
-    - chat-stats.js — Statistikk for bruk og fallback
-    - ... Øvrige RAG- og embed-endepunkter
+    - chat-stats.js — Statistikk for responstid og modellbruk
+    - ... øvrige RAG/embedding-endepunkter
 
 - **utils/**
-  - buildPrompt.ts — 🔄 Bygger systemprompt + messages
-  - llmClient.ts — Kall mot OpenAI med fallback-støtte
-  - tokenGuard.ts — Sjekker budsjett før kall
-  - storage.ts — Lagring av samtaler
+  - buildPrompt.ts — Bygger systemprompt + messages
+  - llmClient.ts — Kall mot OpenAI med fallback
+  - tokenGuard.ts — Sjekker tokenbudsjett
+  - storage.js — Lagring av samtaler (inkl. response_ms)
   - rag.ts — Henter kontekst fra RAG
   - chunker.js — Parser dokumenter til `rag_chunks`
+  - clientPerf.js — ⏱️ Måler svartid på frontend
   - docs.js — Dokumenthåndtering
-  - dropdowns.ts — Verdier til admin-opplasting
 
 - **config/**
-  - personaConfig.js — Alt av oppførsel, intro, farger, modellvalg og tokenbudsjett
+  - personaConfig.js — Oppførsel, intro, bobler, modellvalg, tokenbudsjett
 
 - **components/**
-  - ChatEngine.js — Frontend-chatkomponent
-  - PromptStudioPreview.js — Viser aktiv prompt/config
-  - PromptStudioFull.js — Rediger `personaConfig` (kommende)
+  - ChatEngine.js — Frontend-chatkomponent (nå med perf-integrasjon)
 
 ---
 
@@ -78,6 +77,7 @@
 - id (uuid, PK)
 - session_id (uuid, FK)
 - role, content, tokens
+- response_ms (int) ✅
 - created_at
 
 **message_context_links**
@@ -89,62 +89,52 @@
 ---
 
 ## 3. Arkitektur og flyt
-- Bruker velger bot (f.eks. NullFilter)
-- Intro, farger og tone hentes fra `personaConfig`
-- RAG brukes dynamisk ved behov, med pinned chunks som støtte
-- Samtaler logges og kobles til dokumentkontekst
-- systemPrompt bygges fra config + kontekst via `buildPrompt()`
+- Bruker velger bot (NullFilter eller Keepertrening).
+- Intro og bobler (starters) hentes fra `personaConfig`.
+- RAG-kontekst lastes inn ved behov, pinned chunks alltid med.
+- `systemPrompt` bygges fra config + kontekst via `buildPrompt()`.
+- Samtaler logges i Supabase → inkl. responstid (`response_ms`).
 
 ---
 
 ## 4. Byggesteiner for personlig chatbot
-
-🔧 Alt av tone, oppførsel og kunnskap kommer fra `personaConfig`. Det inkluderer:
-
 - **Navn, avatar, farge** → frontend-stil
 - **intro** → første melding
-- **systemPrompt** → grunnstemme og regler
-- **starters[]** → knapper med forslag
-- **model, temperature, tokenBudget** → styrer AI-adferd
-- **pinnedDocId** → tvinger inn chunks fra valgt dokument
-
-✅ Når bruker starter samtale:
-1. intro vises
-2. starter valgt → sendes som melding
-3. systemPrompt bygges via `buildPrompt`
-4. samtalen logges fra første melding
+- **starters[]** → bobler
+- **systemPrompt** → tone og regler
+- **model, temperature, tokenBudget** → AI-adferd
+- **pinnedDocId** → dokumentchunks som alltid inkluderes
+- **response_ms** → målt svartid per melding
 
 ---
 
 ## 5. Neste steg
-- [ ] Observability: Logging av tid fra input → reply
-- [ ] Tracking av `modelUsed`, `fallbackHit`, `trimmedContext` i `chat-stats.js`
-- [ ] Visuell PromptStudio UI (for redigering av `personaConfig`)
-- [ ] Sanntids RAG-dashboard med chunk-match visning
-- [ ] QA + evaluering via Meta-LLM
+- [ ] Utvide `chat-stats.js` til å vise `AVG(response_ms)` + `MAX(response_ms)`.
+- [ ] Logge `modelUsed`, `fallbackHit`, `trimmedContext`.
+- [ ] Visuell PromptStudio UI (redigere personaConfig).
+- [ ] Flere dokumenter inn i RAG for test.
+- [ ] QA & fallback-test ved nettverksfeil.
 
 ---
 
 ## 6. Beslutninger & Valg
-- AI = GPT-5 Mini i prod, GPT-4o-mini som fallback
-- RAG = alltid aktiv, bruker `rag_chunks` (med `doc_id`, `source_type`, vektor)
-- `personaConfig` = kilde til oppførsel, prompt og budsjetter
-- `doc_number` = kun til visning, all logikk bruker UUID
-- UUID = primærnøkkel i alle tabeller
-- STATUS.md = løpende prosjektminne
+- GPT-5 Mini i prod, GPT-4o-mini som fallback.
+- RAG alltid aktiv, pinned chunks inkluderes.
+- `personaConfig` = kilde for intro, bobler, systemPrompt og modellvalg.
+- UUID som primærnøkkel i alle tabeller.
+- `doc_number` kun til visning, ikke logikk.
 
 ---
 
 ## 7. Fremtidslogg
-- Avatar med video og voice (NullFilter)
-- Langtidshukommelse per bruker
-- Integrasjon med Notion, Make, GPT Agents
-- Ukentlig rapport via Meta-LLM
+- Avatar med video/voice (NullFilter).
+- Langtidshukommelse per bruker.
+- Integrasjon med Notion, Make, GPT Agents.
+- Ukentlig rapport via Meta-LLM.
 
 ---
 
 ## 8. Økonomi & Break-even
-
 **Faste kostnader**
 - Vercel + Supabase: ~1 000 kr
 - Domene + GitHub: ~500 kr
@@ -160,22 +150,28 @@
 
 ## 1000. Changelog
 
+### v0.2.8 – Smooth Operator 💅🚀 (09.09.2025)
+- Responstid (`response_ms`) logges i `chat_messages`.
+- `clientPerf.js` + `ChatEngine.js` integrert for svartidsmåling.
+- NullFilter + Keepertrening oppdatert med intro og bobler fra `personaConfig`.
+- Begge bots testet og viser intro/bobler korrekt.
+- Deploy verifisert i Vercel.
+
 ### v0.2.7 – Prompt Engine Online ⚙️🧠 (09.09.2025)
-- `buildPrompt()` og `llmClient.ts` i full bruk i alle API-endepunkter
-- GPT-5 Mini som default, GPT-4o-mini som fallback
-- `rag/chat.js` støtter pinned chunks og bruker systemprompt riktig
-- CI-workflow fjernet (GitHub Actions)
-- Klar for observability og QA neste runde
+- `buildPrompt()` og `llmClient.ts` i bruk med token-budsjett.
+- GPT-5 Mini med GPT-4o-mini fallback.
+- RAG støtter pinned chunks fra `personaConfig`.
+- CI-workflow fjernet.
 
 ### v0.2.6 – Persona Power Up 🧠✨ (09.09.2025)
-- Full støtte for intro, oppførsel, startere og minne via `personaConfig`
-- Logging av samtaler fungerer inkl. e-post og memory
+- Støtte for intro, oppførsel, startere og minne via `personaConfig`.
+- Logging av samtaler inkl. e-post.
 
 ### v0.2.5 – Token Tetris 🧱🧮 (08.09.2025)
-- Produksjonsdeploy med RAG-verifisering
+- Produksjonsdeploy med RAG-verifisering.
 
 ### v0.2.4 – Chunkmageddon 🧩⚡ (05.09.2025)
-- Migrering til UUID, fullkobling mellom `rag_chunks` og `documents`
+- Migrering til UUID, kobling mellom `rag_chunks` og `documents`.
 
 ### v0.2.3 – Always AI 🤖✨ (05.09.2025)
-- AI + RAG er alltid aktiv i alle samtaler
+- AI + RAG alltid aktiv i alle samtaler.
