@@ -10,6 +10,25 @@ function sseEvent({ event, data }) {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 }
 
+function getBaseUrl(req) {
+  try {
+    const proto = (req.headers["x-forwarded-proto"] || "").toString().split(",")[0] || "http";
+    const host = req.headers.host || "localhost:3000";
+    return `${proto}://${host}`;
+  } catch {
+    return "http://localhost:3000";
+  }
+}
+
+function lastUserFromMessages(messages) {
+  if (!Array.isArray(messages)) return "";
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m?.role === "user" && typeof m.content === "string") return m.content;
+  }
+  return "";
+}
+
 export default async function handler(req, res) {
   const perf = startPerf("chat");
   const stepLog = [];
@@ -31,13 +50,22 @@ export default async function handler(req, res) {
     res.setHeader("Transfer-Encoding", "chunked");
     res.setHeader("Trailer", "Server-Timing");
 
-    // Query params
-    const url = new URL(req.url ?? "http://x");
+    // Solid URL-parsing m/ base (fikser "Invalid URL" ved POST)
+    const absBase = getBaseUrl(req);
+    const url = new URL(req.url || "/api/chat", absBase);
+
+    // Støtt både GET (?q=) og POST ({ q } | { messages })
     const qp = Object.fromEntries(url.searchParams);
-    const userPrompt = (qp.q ?? "").toString();
-    const topK = Number(qp.topK ?? 6);
-    const minSim = Number(qp.minSim ?? 0.0);
-    const botId = qp.botId ?? "nullfilter";
+    const body = (req.method === "POST" && typeof req.body === "object") ? req.body : {};
+
+    const userPrompt =
+      (typeof body?.q === "string" && body.q) ||
+      lastUserFromMessages(body?.messages) ||
+      (qp.q ?? "").toString();
+
+    const topK = Number((body?.topK ?? qp.topK) ?? 6);
+    const minSim = Number((body?.minSim ?? qp.minSim) ?? 0.0);
+    const botId = (body?.botId ?? qp.botId) || "nullfilter";
 
     // Persona (modell, systemprompt, budsjett)
     const persona = personaConfig[botId];
@@ -62,7 +90,7 @@ export default async function handler(req, res) {
     const contextChunks = docs.map((d, i) => `### Doc ${i + 1}: ${d.title}\n${d.content}`);
     measure("ctx_build_end", "ctx_build_start");
 
-    // ✅ Token Guard med budsjett fra persona (ingen endring i modell/flow)
+    // Budsjett til tokenGuard
     const maxTokens =
       (tokenBudget?.pinnedMax ?? 0) +
       (tokenBudget?.ragMax ?? 0) +
@@ -115,12 +143,6 @@ export default async function handler(req, res) {
           rag: { topK, returned: docs.length, minSim },
           tokens: { input: guard.total },
           model,
-          tokenGuard: {
-            isValid: guard.isValid,
-            includedCount: guard.includedCount,
-            droppedCount: guard.droppedCount,
-            overflow: guard.overflow,
-          },
         },
       })
     );
@@ -189,7 +211,9 @@ export default async function handler(req, res) {
 
             res.write(sseEvent({ event: "delta", data: { t: Date.now(), text: delta } }));
           }
-        } catch {}
+        } catch {
+          // ignorér parsefeil i stream
+        }
       }
     }
 
