@@ -4,6 +4,10 @@ import { getDbClient, vectorQuery, fetchDocsByIds } from "../../utils/rag";
 import { tokenGuard } from "../../utils/tokenGuard";
 import personaConfig from "../../config/personaConfig";
 
+// ⬇️ Nye utiler (bevarer eksisterende adferd, bare ryddigere)
+import { buildPrompt } from "../../utils/buildPrompt";
+import { streamFetchChat } from "../../utils/llmClient";
+
 export const config = { runtime: "nodejs" };
 
 function sseEvent({ event, data }) {
@@ -50,7 +54,7 @@ export default async function handler(req, res) {
     res.setHeader("Transfer-Encoding", "chunked");
     res.setHeader("Trailer", "Server-Timing");
 
-    // Solid URL-parsing m/ base (fikser "Invalid URL" ved POST)
+    // Robust URL-parsing m/ base (fikser "Invalid URL" ved POST)
     const absBase = getBaseUrl(req);
     const url = new URL(req.url || "/api/chat", absBase);
 
@@ -70,7 +74,7 @@ export default async function handler(req, res) {
     // Persona (modell, systemprompt, budsjett)
     const persona = personaConfig[botId];
     if (!persona) throw new Error(`Ukjent botId: ${botId}`);
-    const { model, systemPrompt, tokenBudget } = persona;
+    const { tokenBudget } = persona;
 
     // DB → vector query → hent docs
     mark("db_connect_start");
@@ -90,19 +94,29 @@ export default async function handler(req, res) {
     const contextChunks = docs.map((d, i) => `### Doc ${i + 1}: ${d.title}\n${d.content}`);
     measure("ctx_build_end", "ctx_build_start");
 
-    // Budsjett til tokenGuard
+    // Budsjett til tokenGuard (fra personaConfig)
     const maxTokens =
       (tokenBudget?.pinnedMax ?? 0) +
       (tokenBudget?.ragMax ?? 0) +
       (tokenBudget?.replyMax ?? 0);
 
-    const guard = tokenGuard({
-      systemPrompt,
+    // Bygg system+messages via util — KONTEKST appender under systemprompt
+    const promptPack = buildPrompt({
+      persona,
       userPrompt,
       contextChunks,
+      history: [],            // vi har ikke historikk i denne route-varianten
+    });
+
+    // TokenGuard bruker eksakt system-tekst og replyMax fra persona
+    const guard = tokenGuard({
+      systemPrompt: promptPack.messages[0]?.content || "",
+      userPrompt,
+      contextChunks,
+      historyMessages: [],    // ingen historikk her
       maxTokens,
-      replyMax: tokenBudget.replyMax,
-      model,
+      replyMax: persona?.tokenBudget?.replyMax ?? 1200,
+      model: promptPack.model,
     });
 
     if (!guard.isValid) {
@@ -119,21 +133,8 @@ export default async function handler(req, res) {
       return;
     }
 
-    // LLM-kropp
-    const llmBody = {
-      model,
-      stream: true,
-      messages: [
-        { role: "system", content: systemPrompt },
-        {
-          role: "user",
-          content: `Kontekst:\n${guard.includedChunks.join("\n\n")}\n\nSpørsmål:\n${userPrompt}`,
-        },
-      ],
-      temperature: 0.2,
-    };
-
-    // Tidlig meta til klient (for perf overlay)
+    // Stream til OpenAI – samme mønster som før (SSE ut til klient)
+    // Vi bruker llmClient.streamFetchChat for å bygge korrekt request.
     res.write(
       sseEvent({
         event: "meta",
@@ -142,22 +143,18 @@ export default async function handler(req, res) {
           steps: [...stepLog],
           rag: { topK, returned: docs.length, minSim },
           tokens: { input: guard.total },
-          model,
+          model: promptPack.model,
         },
       })
     );
 
-    // Kall LLM (stream)
     mark("llm_req_start");
     const llmReqStartWall = Date.now();
 
-    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(llmBody),
+    const resp = await streamFetchChat({
+      model: promptPack.model,
+      messages: promptPack.messages,
+      temperature: promptPack.temperature,
     });
 
     mark("llm_http_send");
@@ -226,7 +223,7 @@ export default async function handler(req, res) {
     const snap = perf.snapshot({
       tokens: { input: guard.total, output: outputTokens },
       llm: {
-        model,
+        model: promptPack.model,
         requestStartedAt: new Date(llmReqStartWall).toISOString(),
         output: {
           chars: outputChars,
