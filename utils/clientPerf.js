@@ -1,7 +1,7 @@
-// utils/clientPerf.js — NY FIL
+// utils/clientPerf.js — FERDIG VERSJON
 // Frontend timing og SSE-klient for chat.
 // Måler: sendClick → requestStart → firstDelta → firstPaint → done
-// Viser tabell i console + kan trigge callback for videre rapportering.
+// Viser tabell i console + returnerer total responstid (response_ms)
 
 export function createClientPerf(label = "chat") {
   const t0 = performance.now();
@@ -25,6 +25,7 @@ export function createClientPerf(label = "chat") {
     label,
     steps,
     meta: {},
+    response_ms: null, // ⏱️ Nytt felt – total tid i ms
 
     onSendClick() {
       mark("sendClick");
@@ -56,25 +57,29 @@ export function createClientPerf(label = "chat") {
       if (finished) return;
       finished = true;
       mark("done");
-      measure("done", "t0");
+      const total = measure("done", "t0"); // total tid
+      perf.response_ms = total; // ⏱️ lagres her
+
       if (extra && typeof extra === "object") {
         perf.meta = { ...perf.meta, ...extra };
       }
+
       // Pretty log
       try {
-        // lag en tabell som også viser totals
         const table = steps.reduce((acc, s) => {
           acc[s.name] = s.ms + " ms";
           return acc;
         }, {});
         console.group(`[${label}] Frontend timing`);
         console.table(table);
+        console.log("⏱️ Total response_ms:", perf.response_ms + " ms");
         if (Object.keys(perf.meta || {}).length) {
           console.log("meta:", perf.meta);
         }
         console.groupEnd();
       } catch {}
-      return { steps, meta: perf.meta };
+
+      return { steps, meta: perf.meta, response_ms: perf.response_ms };
     },
   };
 
@@ -154,11 +159,11 @@ export function createSSEClient(url, { perf, onMeta, onToken, onDone, onError } 
           } else if (event === "done") {
             try {
               const donePayload = JSON.parse(data);
-              perf?.onDone({ serverDone: donePayload });
-              onDone?.(donePayload);
+              const result = perf?.onDone({ serverDone: donePayload });
+              onDone?.({ ...donePayload, response_ms: result?.response_ms });
             } catch (e) {
-              perf?.onDone();
-              onDone?.();
+              const result = perf?.onDone();
+              onDone?.({ response_ms: result?.response_ms });
             }
             return; // ferdig
           } else if (event === "error") {
@@ -168,29 +173,4 @@ export function createSSEClient(url, { perf, onMeta, onToken, onDone, onError } 
             } catch {
               onError?.({ message: data });
             }
-            // Avslutt ved error
-            return;
-          }
-        }
-      }
-
-      // Hvis stream ender uten "done", fullfør likevel
-      perf?.onDone();
-      onDone?.();
-    } catch (err) {
-      onError?.(err);
-      try {
-        perf?.onDone({ error: String(err?.message || err) });
-      } catch {}
-    }
-  }
-
-  run();
-
-  // Returner en abort-funksjon så vi kan avbryte ved ny forespørsel
-  return () => {
-    try {
-      ctrl.abort();
-    } catch {}
-  };
-}
+            //
