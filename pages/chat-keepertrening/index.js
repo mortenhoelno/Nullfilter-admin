@@ -1,8 +1,12 @@
 // FERDIG VERSJON: pages/chat-keepertrening/index.js
-// Keepertrening-chat med responstid-logging + starter-fallback
+// Keepertrening-chat med responstid-logging + starter-fallback + ekte API-kall
 
 import { useState, useEffect } from "react";
-import { createConversation, saveMessage, getConversationByEmail } from "../../utils/storage";
+import {
+  createConversation,
+  saveMessage,
+  getConversationByEmail,
+} from "../../utils/storage";
 import ChatEngine from "../../components/ChatEngine";
 import personaConfig from "../../config/personaConfig";
 /** @typedef {import('../../types').Message} Message */
@@ -38,7 +42,7 @@ export default function KeepertreningChat() {
     loadConversation();
   }, [useMemory, email]);
 
-  // 🚀 Send melding – med responstid-logging
+  // 🚀 Send melding – med responstid-logging og ekte API-kall
   const sendMessage = async (text, perfCallbacks = {}) => {
     const toSend = (text ?? chatInput).trim();
     if (!toSend) return;
@@ -51,12 +55,24 @@ export default function KeepertreningChat() {
     try {
       perfCallbacks.onRequestStart?.();
 
-      // foreløpig enkel placeholder – kan senere byttes ut med ekte API-kall
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          botId: "keepertrening",
+          message: toSend,
+          history: messages,
+        }),
+      });
 
+      if (!res.ok) {
+        throw new Error(`Chat API feilet: ${res.status}`);
+      }
+
+      const data = await res.json();
       const reply = {
         role: "assistant",
-        content: "(Keepertrening-svar kommer – vi trener fortsatt 🤾‍♂️)",
+        content: data.reply || "(ingen respons)",
       };
 
       setMessages((prev) => [...prev, reply]);
@@ -69,7 +85,7 @@ export default function KeepertreningChat() {
         });
       }
     } catch (err) {
-      console.error(err);
+      console.error("sendMessage error:", err);
       setMessages((prev) => [
         ...prev,
         {
@@ -86,9 +102,14 @@ export default function KeepertreningChat() {
   };
 
   // 🔄 Fallback hvis config.starters mangler
-  const starters = config.starters && config.starters.length > 0
-    ? config.starters
-    : ["Hvordan kan jeg trene reaksjon?", "Hvordan forbedre spenst?", "Tips for kampforberedelse?"];
+  const starters =
+    config.starters && config.starters.length > 0
+      ? config.starters
+      : [
+          "Hvordan kan jeg trene reaksjon?",
+          "Hvordan forbedre spenst?",
+          "Tips for kampforberedelse?",
+        ];
 
   return (
     <div className="min-h-screen bg-gray-50 px-4 py-8 sm:px-6 lg:px-8">
@@ -118,11 +139,21 @@ export default function KeepertreningChat() {
         <div className="space-y-2">
           <p className="font-medium">Hvordan vil du bruke chatboten?</p>
           <label className="flex items-center gap-2">
-            <input type="radio" name="memory" checked={!useMemory} onChange={() => setUseMemory(false)} />
+            <input
+              type="radio"
+              name="memory"
+              checked={!useMemory}
+              onChange={() => setUseMemory(false)}
+            />
             Anonym (ingenting lagres)
           </label>
           <label className="flex items-center gap-2">
-            <input type="radio" name="memory" checked={useMemory} onChange={() => setUseMemory(true)} />
+            <input
+              type="radio"
+              name="memory"
+              checked={useMemory}
+              onChange={() => setUseMemory(true)}
+            />
             Husk meg og tidligere samtaler (bruk e-post)
           </label>
 
