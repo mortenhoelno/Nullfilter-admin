@@ -1,28 +1,25 @@
 // config/personaConfig.js
 
-// 📚 Dokument som alltid skal med i ALLE bots
-const globalPinnedDocId = "55102264-5908-466a-be0e-68c666a3add6"; // Mini-Morten UUID
-
+// 📚 Konfig for alle bots (uten hardkodet global pinned – styres fra admin/DB)
 const personaConfig = {
   nullfilter: {
     name: "Nullfilter",
 
-    // 📌 Hvilken modell brukes (og fallback hvis den feiler)
+    // 📌 Modellvalg
     model: "gpt-4o-mini",
     fallbackModel: "gpt-4o",
 
-    // 🌡️ Hvor "kreativ" skal modellen være?
+    // 🌡️ Temperatur (kreativitet)
     temperature: 0.2,
 
-    // 🎯 Maks tokens for hver del av prompten
+    // 🎯 Maks tokens for hver del
     tokenBudget: {
-      pinnedMax: 600,   // Alltid med (global + ev. bot-spesifikk)
+      pinnedMax: 600,   // Pinned fra DB/admin
       ragMax: 1200,     // Relevante chunks
-      replyMax: 1200    // Maks tokens for svaret
+      replyMax: 1200    // Maks tokens i svaret
     },
 
-    // 📚 Dokument som alltid skal med i ALLE svar (arver global)
-    // pinnedDocId fjernes her – styres globalt
+    // 📜 Systemprompt (kjerneinstruks)
     systemPrompt: `
 Du er Nullfilter – en klok og ekte samtalepartner som hjelper unge med å forstå seg selv og komme gjennom tøffe perioder.
 
@@ -61,7 +58,7 @@ Du har tilgang til relevante tekster og strategier som skal brukes som svargrunn
       ragMax: 1000,
       replyMax: 1000
     },
-    // 📚 Bot-spesifikk pinned (kommer i tillegg til global)
+    // 📚 Bot-spesifikk pinned (fra DB/admin i stedet for hardkodet global)
     pinnedDocId: "43ef1473-3c48-4caf-bc6d-8a2a3fde9f7a",
     systemPrompt: `
 Du er Keeperbot – en motiverende og trygg støtte for unge målvakter som vil forbedre seg mentalt og fysisk.
@@ -71,7 +68,6 @@ Du kombinerer pedagogikk med konkret teknikk, og hjelper dem å analysere egne t
 Du snakker enkelt, bruker eksempler fra idrett, og styrker selvtillit gjennom innsikt og mental trening.
     `.trim(),
 
-    // 🌟 Intro og bobler
     intro: "Hei, jeg er Keeperbot 🧤 Klar for å trene reaksjon og fokus?",
     starters: [
       "Hvordan kan jeg bli raskere på reflekser?",
@@ -82,5 +78,4 @@ Du snakker enkelt, bruker eksempler fra idrett, og styrker selvtillit gjennom in
   }
 };
 
-export { globalPinnedDocId };
 export default personaConfig;
