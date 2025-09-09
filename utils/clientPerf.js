@@ -173,4 +173,29 @@ export function createSSEClient(url, { perf, onMeta, onToken, onDone, onError } 
             } catch {
               onError?.({ message: data });
             }
-            //
+            // Avslutt ved error
+            return;
+          }
+        }
+      }
+
+      // Hvis stream ender uten "done", fullfør likevel
+      const result = perf?.onDone();
+      onDone?.({ response_ms: result?.response_ms });
+    } catch (err) {
+      onError?.(err);
+      try {
+        perf?.onDone({ error: String(err?.message || err) });
+      } catch {}
+    }
+  }
+
+  run();
+
+  // Returner en abort-funksjon så vi kan avbryte ved ny forespørsel
+  return () => {
+    try {
+      ctrl.abort();
+    } catch {}
+  };
+} // 👈 denne må være her!
