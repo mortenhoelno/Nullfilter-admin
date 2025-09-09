@@ -1,6 +1,6 @@
 // components/PromptStudioPreview.js — LETTVEKTS SANDBOX (uten lagring)
 // Eksperimenter med prompt, modell (inkl. gpt-5-mini), temperatur og budsjett.
-// Svar vises direkte i panelet.
+// Svar vises direkte i panelet via /api/rag/chat.
 
 import { useState } from "react";
 
@@ -18,7 +18,7 @@ const MODELS = [
   "gpt-4o-mini",
   "gpt-4.1",
   "gpt-4.1-mini",
-  "gpt-5-mini", // for eksperimentering – backend validerer/feiler hvis ikke støttet
+  "gpt-5-mini", // eksperiment – API feiler pent hvis ikke støttet
 ];
 
 export default function PromptStudioPreview() {
@@ -83,7 +83,7 @@ export default function PromptStudioPreview() {
       </div>
 
       <p className="text-xs text-gray-500 mb-4">
-        Trygg *sandbox*: påvirker ikke bot-konfig. Bruk denne for raske forsøk (inkl. gpt-5-mini). Svar vises nedenfor.
+        Trygg sandbox: påvirker ikke bot-oppsett. Test f.eks. <code>gpt-5-mini</code>. Svaret kommer rett under.
       </p>
 
       <div className="grid md:grid-cols-2 gap-5">
@@ -160,7 +160,7 @@ export default function PromptStudioPreview() {
           </div>
 
           <p className="text-xs text-gray-500">
-            * RAG-budsjett (ragMax/pinnedMax) holdes utenfor her – API gjør trimming via Token Guard.
+            * RAG-budsjett håndteres i API (Token Guard). Dette styrer bare total- og outputbudsjett.
           </p>
         </div>
       </div>
@@ -187,7 +187,7 @@ export default function PromptStudioPreview() {
               <div>Master-chunks: <span className="font-mono">{ragHits.master_hits}</span></div>
             </div>
             <p className="mt-2 text-xs text-gray-500">
-              * Output kommer direkte hit. Ingen lagring – bare ren moro 🎈
+              * Output vises her – ingen lagring, bare eksperimentering 🎈
             </p>
           </div>
         </div>
