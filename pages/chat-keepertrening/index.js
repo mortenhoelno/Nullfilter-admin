@@ -1,4 +1,5 @@
-// FERDIG VERSJON: pages/chat-keepertrening/index.js med Supabase-lagring + starter-fallback
+// FERDIG VERSJON: pages/chat-keepertrening/index.js
+// Keepertrening-chat med responstid-logging + starter-fallback
 
 import { useState, useEffect } from "react";
 import { createConversation, saveMessage, getConversationByEmail } from "../../utils/storage";
@@ -37,16 +38,8 @@ export default function KeepertreningChat() {
     loadConversation();
   }, [useMemory, email]);
 
-  const appendBotPlaceholder = async () => {
-    const reply = {
-      role: "assistant",
-      content: "(Vi jobber med spillet – svar kommer snart!)",
-    };
-    setMessages((prev) => [...prev, reply]);
-    if (conversation) await saveMessage(conversation.id, reply);
-  };
-
-  const sendMessage = async (text) => {
+  // 🚀 Send melding – med responstid-logging
+  const sendMessage = async (text, perfCallbacks = {}) => {
     const toSend = (text ?? chatInput).trim();
     if (!toSend) return;
 
@@ -55,13 +48,47 @@ export default function KeepertreningChat() {
     setChatInput("");
     if (conversation) await saveMessage(conversation.id, newMessage);
 
-    setTimeout(() => appendBotPlaceholder(), 400);
+    try {
+      perfCallbacks.onRequestStart?.();
+
+      // foreløpig enkel placeholder – kan senere byttes ut med ekte API-kall
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      const reply = {
+        role: "assistant",
+        content: "(Keepertrening-svar kommer – vi trener fortsatt 🤾‍♂️)",
+      };
+
+      setMessages((prev) => [...prev, reply]);
+
+      const perfResult = perfCallbacks.onDone?.({});
+      if (conversation) {
+        await saveMessage(conversation.id, {
+          ...reply,
+          response_ms: perfResult ?? null,
+        });
+      }
+    } catch (err) {
+      console.error(err);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: "En feil oppsto under samtalen. Prøv igjen senere.",
+        },
+      ]);
+    }
   };
 
   const handleStarterClick = (msg) => {
     setChatInput(msg);
     sendMessage(msg);
   };
+
+  // 🔄 Fallback hvis config.starters mangler
+  const starters = config.starters && config.starters.length > 0
+    ? config.starters
+    : ["Hvordan kan jeg trene reaksjon?", "Hvordan forbedre spenst?", "Tips for kampforberedelse?"];
 
   return (
     <div className="min-h-screen bg-gray-50 px-4 py-8 sm:px-6 lg:px-8">
@@ -125,7 +152,7 @@ export default function KeepertreningChat() {
         <div className="space-y-2">
           <p className="font-medium">Hva vil du snakke om? Trykk på en boble:</p>
           <div className="flex flex-wrap gap-2">
-            {(config.starters ?? []).map((msg, idx) => (
+            {starters.map((msg, idx) => (
               <button
                 key={idx}
                 onClick={() => handleStarterClick(msg)}
