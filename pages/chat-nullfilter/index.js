@@ -1,5 +1,5 @@
 // FERDIG VERSJON: pages/chat-nullfilter/index.js
-// NullFilter-chat med minne, RAG og hel kontekst
+// NullFilter-chat med minne, RAG, responstid-logging og hel kontekst
 
 import { useState, useEffect } from "react";
 import {
@@ -47,7 +47,7 @@ export default function NullFilterChat() {
   }, [useMemory, email]);
 
   // 🚀 Send melding + bruk hele historikken
-  const sendMessage = async (text) => {
+  const sendMessage = async (text, perfCallbacks = {}) => {
     const toSend = (text ?? chatInput).trim();
     if (!toSend) return;
 
@@ -68,7 +68,6 @@ Bruk konteksten under når du svarer. Ikke gjett. Si ifra hvis noe mangler.
 ${contextText ? `\nRelevante utdrag:\n${contextText}\n` : ""}
     `;
 
-    // 👉 Nå sender vi hele historikken videre
     const fullMessages = [
       { role: "system", content: systemPrompt },
       ...messages,
@@ -76,6 +75,8 @@ ${contextText ? `\nRelevante utdrag:\n${contextText}\n` : ""}
     ];
 
     try {
+      perfCallbacks.onRequestStart?.(); // ⏱️ marker at request starter
+
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -89,7 +90,15 @@ ${contextText ? `\nRelevante utdrag:\n${contextText}\n` : ""}
       };
 
       setMessages((prev) => [...prev, reply]);
-      if (conversation) await saveMessage(conversation.id, reply);
+
+      // ⏱️ logg ferdig
+      const perfResult = perfCallbacks.onDone?.(data);
+      if (conversation) {
+        await saveMessage(conversation.id, {
+          ...reply,
+          response_ms: perfResult ?? null, // lagre responstid hvis tilgjengelig
+        });
+      }
     } catch (err) {
       console.error(err);
       setMessages((prev) => [
