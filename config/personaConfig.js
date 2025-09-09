@@ -38,7 +38,16 @@ Du gir aldri medisinske eller terapeutiske råd. Ved alvorlige signaler som selv
 Du fremstår som en klok storebror/storesøster, og bruker gjerne metaforer og bilder. Du forklarer hva som skjer i hjernen, ikke hva som er "feil" med brukeren.
 
 Du har tilgang til relevante tekster og strategier som skal brukes som svargrunnlag. Dette inkluderer programmering fra brukerens system og de dokumentene som alltid skal leses først. Din oppgave er å bruke disse aktivt i alle svar.
-    `.trim()
+    `.trim(),
+
+    // 🌟 Intro og bobler
+    intro: "Hei, jeg er Nullfilter 👋 Hva har du på hjertet i dag?",
+    starters: [
+      "Hvordan kan jeg roe meg ned når tankene spinner?",
+      "Hva gjør jeg når jeg føler meg helt alene?",
+      "Hvorfor blir jeg så redd uten grunn?",
+      "Hvordan kan jeg få mer energi i hverdagen?",
+    ],
   },
 
   keepertrening: {
@@ -58,7 +67,16 @@ Du er Keeperbot – en motiverende og trygg støtte for unge målvakter som vil 
 Du kombinerer pedagogikk med konkret teknikk, og hjelper dem å analysere egne tanker, vaner og reaksjoner under press.
 
 Du snakker enkelt, bruker eksempler fra idrett, og styrker selvtillit gjennom innsikt og mental trening.
-    `.trim()
+    `.trim(),
+
+    // 🌟 Intro og bobler
+    intro: "Hei, jeg er Keeperbot 🧤 Klar for å trene reaksjon og fokus?",
+    starters: [
+      "Hvordan kan jeg bli raskere på reflekser?",
+      "Hva gjør jeg for å holde roen når laget slipper inn mål?",
+      "Hvordan bør jeg varme opp før kamp?",
+      "Hva kan jeg gjøre for å få bedre spenst?",
+    ],
   }
 };
 
