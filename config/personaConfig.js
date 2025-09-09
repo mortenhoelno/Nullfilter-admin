@@ -5,8 +5,8 @@ const personaConfig = {
     name: "Nullfilter",
 
     // 📌 Hvilken modell brukes (og fallback hvis den feiler)
-    model: "gpt-5-mini",
-    fallbackModel: "gpt-4o",
+   model: "gpt-4o-mini",
+fallbackModel: "gpt-4o",
 
     // 🌡️ Hvor "kreativ" skal modellen være?
     temperature: 0.2,
