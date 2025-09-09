@@ -1,4 +1,4 @@
-// utils/rag.js — OPPDATERT FERDIG VERSJON (DB-kall med detaljert timing)
+// utils/rag.js — FERDIG VERSJON (DB-kall med detaljert timing)
 // Dette modulerer tre ting:
 //  1) getDbClient() – enkel klient med .query(action, payload) via HTTP-proxy (DB_HTTP_URL)
 //  2) vectorQuery()  – RAG vektorsøk (pgvector) med perf-målinger
@@ -10,11 +10,12 @@
 //  - pgvector installert og (anbefalt) IVFFLAT index på rag_chunks(embedding)
 //
 // Kjøring av RPC via Edge Function:
-//  - { action: "vector_query", payload: { query_embedding, topk, minsim } }
-//  - { action: "fetch_docs", payload: { ids } }
-//  - { action: "log_chat", payload: { session_id, role, content, tokens, response_ms } }
+//  - Sett opp en sikker HTTP-endepunkt (Edge Function) som tar JSON: { action, payload } og returnerer { rows }
+//  - Konfigurer env:
+//      DB_HTTP_URL    = https://<your-edge-function-url>
+//      DB_HTTP_TOKEN  = <bearer token> (f.eks. service role eller egen secret for funksjonen)
 //
-// NB: Hvis du allerede har en native klient (pg / supabase-js), kan du erstatte implementasjonen av query().
+// NB: Hvis du allerede har en native klient (pg / supabase-js med SQL-proxy), kan du erstatte implementasjonen av query().
 
 import { startPerf } from "./perf";
 
@@ -23,7 +24,7 @@ let cachedDb = null;
 
 /**
  * getDbClient()
- * Returnerer en klient med .query(action, payload) som kaller Edge Function.
+ * Returnerer en klient med .query(action, payload) som kaller et internt HTTP-endepunkt.
  * @returns {Promise<{ query: (action: string, payload?: any) => Promise<{ rows: any[] }> }>}
  */
 export async function getDbClient() {
@@ -43,7 +44,7 @@ export async function getDbClient() {
     );
   }
 
-  // Minimal HTTP-klient. Bruker Edge Function sql-proxy med action/payload.
+  // Minimal HTTP-klient. Nå sender vi { action, payload } til Edge Function.
   const client = {
     async query(action, payload = {}) {
       const resp = await fetch(baseUrl, {
@@ -73,10 +74,10 @@ export async function getDbClient() {
 
 /**
  * vectorQuery()
- * Kjører vektorsøk via RPC `vector_query`.
+ * Kjører selve vektorsøket. Nå via RPC `vector_query` i stedet for rå SQL.
  *
  * @param {object} db - klient fra getDbClient()
- * @param {number[]} queryEmbedding - ferdig generert embedding (float[] / vector)
+ * @param {number[]} queryEmbedding - ferdig embedding (float[] fra OpenAI)
  * @param {{ topK?: number, minSim?: number }} options
  * @returns {Promise<{ ids: number[], rows: any[] }>}
  */
@@ -93,6 +94,7 @@ export async function vectorQuery(db, queryEmbedding, { topK = 6, minSim = 0.0 }
   perf.measure("rpc_recv", "rpc_send");
   perf.mark("__end");
   const snap = perf.snapshot({ rows: rows.length });
+  // Logg i dev for å se DB-tid per RPC-kall
   // console.debug("[DB vectorQuery PERF]", JSON.stringify(snap));
 
   return {
@@ -103,7 +105,7 @@ export async function vectorQuery(db, queryEmbedding, { topK = 6, minSim = 0.0 }
 
 /**
  * fetchDocsByIds()
- * Henter dokument-chunks via RPC `fetch_docs`.
+ * Henter innholdet for gitte chunk-IDs + dokumenttittel. Nå via RPC `fetch_docs`.
  * @param {object} db
  * @param {number[]} ids
  * @returns {Promise<Array<{ id: number, title: string, content: string }>>}
@@ -128,13 +130,15 @@ export async function fetchDocsByIds(db, ids) {
   }));
 }
 
-/**
- * getRagContext()
- * Sammensatt: kjør vectorQuery + fetchDocsByIds og bygg kontekstdeler.
- */
+// utils/rag.js – BEHOLDT men tilpasset RPC
 export async function getRagContext(db, queryEmbedding, { topK = 6, minSim = 0.0, sourceType = null } = {}) {
+  // 1) vektorsøk
   const { ids } = await vectorQuery(db, queryEmbedding, { topK, minSim, sourceType });
+
+  // 2) hent dokument-chunks i samme rekkefølge
   const docs = await fetchDocsByIds(db, ids);
+
+  // 3) bygg kontekstdeler slik UI'en forventer
   const chunks = docs.map((d, i) => `### Doc ${i + 1}: ${d.title}\n${d.content}`);
 
   return {
