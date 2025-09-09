@@ -84,11 +84,11 @@ function AdminPage() {
       setIsUploading(true);
 
       await upsertDocument({
-        docNumber: selectedDocNumber,
-        title: finalTitle,
-        category: finalCategory,
-        theme: finalTheme,
-      });
+  docNumber: selectedDocNumber,
+  title: finalTitle ?? "",
+  category: finalCategory ?? "",
+  theme: finalTheme ?? "",
+});
 
       if (aiFile) {
         await uploadAndFlag({ file: aiFile, docNumber: selectedDocNumber, kind: "ai" });
