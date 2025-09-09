@@ -1,21 +1,14 @@
 // utils/rag.js — FERDIG VERSJON (DB-kall med detaljert timing)
-// Dette modulerer tre ting:
+// Dette modulerer fire ting nå:
 //  1) getDbClient() – enkel klient med .query(action, payload) via HTTP-proxy (DB_HTTP_URL)
 //  2) vectorQuery()  – RAG vektorsøk (pgvector) med perf-målinger
-//  3) fetchDocsByIds() – Hent valgte chunks + dokumenttittel med perf-målinger
+//  3) fetchDocsByIds() – Hent valgte chunks med chunk-id (bigint)
+//  4) fetchDocsByDocIds() – Hent chunks basert på dokument-id (uuid, pinned)
 //
 // Forventet skjema (tilpass ved behov):
 //  - public.documents (id uuid PK, title text, ...)
 //  - public.rag_chunks (id bigint PK, doc_id uuid FK → documents.id, title text, content text, embedding vector(1536))
 //  - pgvector installert og (anbefalt) IVFFLAT index på rag_chunks(embedding)
-//
-// Kjøring av RPC via Edge Function:
-//  - Sett opp en sikker HTTP-endepunkt (Edge Function) som tar JSON: { action, payload } og returnerer { rows }
-//  - Konfigurer env:
-//      DB_HTTP_URL    = https://<your-edge-function-url>
-//      DB_HTTP_TOKEN  = <bearer token> (f.eks. service role eller egen secret for funksjonen)
-//
-// NB: Hvis du allerede har en native klient (pg / supabase-js med SQL-proxy), kan du erstatte implementasjonen av query().
 
 import { startPerf } from "./perf";
 import personaConfig, { globalPinnedDocId } from "../config/personaConfig";
@@ -45,7 +38,6 @@ export async function getDbClient() {
     );
   }
 
-  // Minimal HTTP-klient. Nå sender vi { action, payload } til Edge Function.
   const client = {
     async query(action, payload = {}) {
       const resp = await fetch(baseUrl, {
@@ -61,7 +53,6 @@ export async function getDbClient() {
         throw new Error(`DB HTTP ${resp.status}: ${txt || "<no body>"}`);
       }
       const json = await resp.json();
-      // forventer { rows: [...] }
       if (!json || typeof json !== "object" || !("rows" in json)) {
         throw new Error("Ugyldig DB-svar – forventet { rows: [...] }");
       }
@@ -75,12 +66,7 @@ export async function getDbClient() {
 
 /**
  * vectorQuery()
- * Kjører selve vektorsøket. Nå via RPC `vector_query` i stedet for rå SQL.
- *
- * @param {object} db - klient fra getDbClient()
- * @param {number[]} queryEmbedding - ferdig embedding (float[] fra OpenAI)
- * @param {{ topK?: number, minSim?: number }} options
- * @returns {Promise<{ ids: number[], rows: any[] }>}
+ * Kjører selve vektorsøket via RPC `vector_query`.
  */
 export async function vectorQuery(db, queryEmbedding, { topK = 6, minSim = 0.0 } = {}) {
   const perf = startPerf("db_vector_query");
@@ -95,7 +81,6 @@ export async function vectorQuery(db, queryEmbedding, { topK = 6, minSim = 0.0 }
   perf.measure("rpc_recv", "rpc_send");
   perf.mark("__end");
   const snap = perf.snapshot({ rows: rows.length });
-  // console.debug("[DB vectorQuery PERF]", JSON.stringify(snap));
 
   return {
     ids: rows.map((r) => r.id),
@@ -105,10 +90,7 @@ export async function vectorQuery(db, queryEmbedding, { topK = 6, minSim = 0.0 }
 
 /**
  * fetchDocsByIds()
- * Henter innholdet for gitte chunk-IDs + dokumenttittel. Nå via RPC `fetch_docs`.
- * @param {object} db
- * @param {number[]} ids
- * @returns {Promise<Array<{ id: number, title: string, content: string }>>}
+ * Henter innholdet for gitte chunk-IDs (bigint).
  */
 export async function fetchDocsByIds(db, ids) {
   if (!ids?.length) return [];
@@ -121,7 +103,6 @@ export async function fetchDocsByIds(db, ids) {
   perf.measure("rpc_recv", "rpc_send");
   perf.mark("__end");
   const snap = perf.snapshot({ rows: rows.length });
-  // console.debug("[DB fetchDocsByIds PERF]", JSON.stringify(snap));
 
   return rows.map((r) => ({
     id: r.id,
@@ -131,26 +112,36 @@ export async function fetchDocsByIds(db, ids) {
 }
 
 /**
- * fetchPinnedChunks()
+ * fetchDocsByDocIds()
  * Henter alle chunks for et gitt dokument-id (uuid).
- * @param {object} db
- * @param {string} docId
- * @returns {Promise<string[]>}
+ * Brukes for pinned, med source_type='ai' som default.
  */
-export async function fetchPinnedChunks(db, docId) {
-  if (!docId) return [];
-  const docs = await fetchDocsByIds(db, [docId]);
-  return docs.map((d) => d.content || "");
+export async function fetchDocsByDocIds(db, docIds, wantedSourceType = "ai") {
+  if (!docIds?.length) return [];
+
+  const perf = startPerf("db_fetch_docs_by_docid");
+  perf.mark("rpc_send");
+
+  const { rows } = await db.query("fetch_docs_by_docid", {
+    doc_ids: docIds,
+    wanted_source_type: wantedSourceType,
+  });
+
+  perf.measure("rpc_recv", "rpc_send");
+  perf.mark("__end");
+  const snap = perf.snapshot({ rows: rows.length });
+
+  return rows.map((r) => ({
+    id: r.id,
+    title: r.title,
+    content: r.content,
+    source_type: r.source_type,
+  }));
 }
 
 /**
  * getRagContext()
- * Nå utvidet: alltid inkluderer globalPinnedDocId + ev. persona pinnedDocId, i tillegg til vanlige RAG-chunks.
- *
- * @param {object} db
- * @param {number[]} queryEmbedding
- * @param {{ topK?: number, minSim?: number, sourceType?: string, botId?: string }} options
- * @returns {Promise<{ docs: any[], chunks: string[], meta: object }>}
+ * Alltid inkluderer globalPinnedDocId (kun ai) + ev. persona pinnedDocId, i tillegg til dynamiske RAG-chunks.
  */
 export async function getRagContext(
   db,
@@ -160,30 +151,39 @@ export async function getRagContext(
   let allDocs = [];
   let allChunks = [];
 
-  // 1) Global pinned (Mini-Morten)
+  // 1) Global pinned (Mini-Morten, kun AI)
   if (globalPinnedDocId) {
-    const globalDocs = await fetchDocsByIds(db, [globalPinnedDocId]);
+    const globalDocs = await fetchDocsByDocIds(db, [globalPinnedDocId], "ai");
     allDocs = [...allDocs, ...globalDocs];
-    allChunks = [...allChunks, ...globalDocs.map((d, i) => `### Doc G${i + 1}: ${d.title}\n${d.content}`)];
+    allChunks = [
+      ...allChunks,
+      ...globalDocs.map((d, i) => `### Doc G${i + 1}: ${d.title}\n${d.content}`),
+    ];
   }
 
   // 2) Persona pinned (hvis definert for botId)
   if (botId && personaConfig[botId]?.pinnedDocId) {
     const personaId = personaConfig[botId].pinnedDocId;
-    const personaDocs = await fetchDocsByIds(db, [personaId]);
+    const personaDocs = await fetchDocsByDocIds(db, [personaId], "ai");
     allDocs = [...allDocs, ...personaDocs];
-    allChunks = [...allChunks, ...personaDocs.map((d, i) => `### Doc P${i + 1}: ${d.title}\n${d.content}`)];
+    allChunks = [
+      ...allChunks,
+      ...personaDocs.map((d, i) => `### Doc P${i + 1}: ${d.title}\n${d.content}`),
+    ];
   }
 
-  // 3) Dynamiske RAG-chunks
+  // 3) Dynamiske RAG-chunks (ai + master blandet)
   const { ids } = await vectorQuery(db, queryEmbedding, { topK, minSim, sourceType });
   const ragDocs = await fetchDocsByIds(db, ids);
   allDocs = [...allDocs, ...ragDocs];
-  allChunks = [...allChunks, ...ragDocs.map((d, i) => `### Doc R${i + 1}: ${d.title}\n${d.content}`)];
+  allChunks = [
+    ...allChunks,
+    ...ragDocs.map((d, i) => `### Doc R${i + 1}: ${d.title}\n${d.content}`),
+  ];
 
   return {
-    docs: allDocs, // alle dokumenter (global + persona + rag)
-    chunks: allChunks, // preformatert tekstblokker
+    docs: allDocs,
+    chunks: allChunks,
     meta: {
       topK,
       returned: ragDocs.length,
