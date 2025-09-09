@@ -1,8 +1,8 @@
-// pages/index.js — OPPDATERT: begge Prompt-studioer + forklaringer + alt eksisterende
+// pages/index.js — OPPDATERT: små forbedringer for å vise modell/fallback fra RAG-test
 import withAuth from "../components/withAuth";
 import { useEffect, useRef, useState } from "react";
 
-// 👇 nye komponenter (sørg for at disse filene finnes i /components)
+// 👇 disse to må finnes i /components (du har dem fra før)
 import PromptStudioFull from "../components/PromptStudioFull";
 import PromptStudioPreview from "../components/PromptStudioPreview";
 import FeatureFlagsPanel from "../components/FeatureFlagsPanel";
@@ -195,6 +195,11 @@ function HomePage() {
     }
   }
 
+  // Avledet: ekstra badge-info for RAG-test
+  const ragOut = apiTest.path === "/api/rag/chat" && apiTest.output && typeof apiTest.output === "object"
+    ? apiTest.output
+    : null;
+
   // ETA-beregning
   const remaining = stats.missing;
   const rate = lastRate; // rows/sec
@@ -263,6 +268,28 @@ function HomePage() {
               <div className="text-sm font-medium mb-1">
                 Resultat for <span className="font-mono">{apiTest.path}</span>
               </div>
+
+              {/* Små badges når /api/rag/chat testes */}
+              {ragOut && (
+                <div className="flex flex-wrap items-center gap-2 mb-2 text-xs">
+                  {"modelUsed" in ragOut && (
+                    <span className="inline-flex items-center px-2 py-1 rounded-full bg-indigo-100 text-indigo-800">
+                      Modell: {ragOut.modelUsed}
+                    </span>
+                  )}
+                  {"fallbackHit" in ragOut && (
+                    <span className={`inline-flex items-center px-2 py-1 rounded-full ${ragOut.fallbackHit ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>
+                      {ragOut.fallbackHit ? "Fallback brukt" : "Ingen fallback"}
+                    </span>
+                  )}
+                  {ragOut?.rag && (
+                    <span className="inline-flex items-center px-2 py-1 rounded-full bg-gray-100 text-gray-700">
+                      Treff: AI {ragOut.rag.ai_hits} · Master {ragOut.rag.master_hits}
+                    </span>
+                  )}
+                </div>
+              )}
+
               {apiTest.error ? (
                 <div className="p-3 bg-rose-50 border border-rose-200 rounded text-rose-700 text-sm">
                   Feil: {apiTest.error}
@@ -287,7 +314,7 @@ function HomePage() {
         {/* 🔁 Feature flags */}
         <FeatureFlagsPanel />
 
-        {/* 📚 RAG snapshot */}
+        {/* 📚 RAG – snapshot */}
         <section className="bg-white rounded-2xl shadow p-5">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-lg font-semibold">📚 RAG – snapshot</h2>
@@ -437,7 +464,7 @@ function HomePage() {
           </div>
         </section>
 
-        {/* 🧠 Embeddings – auto backfill med fremdrift */}
+        {/* 🧠 Embeddings – Backfill med fremdrift */}
         <section className="bg-white rounded-2xl shadow p-5">
           <h2 className="text-lg font-semibold mb-3">🧠 Embeddings – Backfill med fremdrift</h2>
 
@@ -454,7 +481,7 @@ function HomePage() {
             <div className="p-3 rounded-xl bg-gray-100">
               <div className="text-gray-500">Hastighet</div>
               <div className="text-xl font-semibold">{rate ? `${rate.toFixed(1)} r/s` : "—"}</div>
-            </div>
+            </div }
             <div className="p-3 rounded-xl bg-gray-100">
               <div className="text-gray-500">ETA</div>
               <div className="text-xl font-semibold">{fmtSeconds(etaSec)}</div>
