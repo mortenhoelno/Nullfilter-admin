@@ -1,4 +1,4 @@
-// FERDIG VERSJON: pages/chat-keepertrening/index.js med Supabase-lagring
+// FERDIG VERSJON: pages/chat-keepertrening/index.js med Supabase-lagring + starter-fallback
 
 import { useState, useEffect } from "react";
 import { createConversation, saveMessage, getConversationByEmail } from "../../utils/storage";
@@ -125,7 +125,7 @@ export default function KeepertreningChat() {
         <div className="space-y-2">
           <p className="font-medium">Hva vil du snakke om? Trykk på en boble:</p>
           <div className="flex flex-wrap gap-2">
-            {config.starters.map((msg, idx) => (
+            {(config.starters ?? []).map((msg, idx) => (
               <button
                 key={idx}
                 onClick={() => handleStarterClick(msg)}
