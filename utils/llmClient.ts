@@ -3,12 +3,44 @@
 // Bevarer eksisterende mønstre: du kan fortsatt bruke fetch+SSE i /api/chat hvis du vil.
 
 import { OpenAI } from "openai";
+import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-export type ChatMessage = { role: "system" | "user" | "assistant" | "tool" | "developer"; content: string };
+export type ChatMessage = {
+  role: "system" | "user" | "assistant" | "tool" | "developer";
+  content: string;
+  tool_call_id?: string;
+};
+
+// ✅ Ny: konvertering fra ChatMessage → ChatCompletionMessageParam
+function toApiMessages(messages: ChatMessage[]): ChatCompletionMessageParam[] {
+  return messages
+    .map((m) => {
+      switch (m.role) {
+        case "developer":
+          return { role: "user", content: m.content };
+        case "tool":
+          if (m.tool_call_id) {
+            return {
+              role: "tool",
+              content: m.content,
+              tool_call_id: m.tool_call_id,
+            };
+          }
+          return null;
+        case "system":
+        case "user":
+        case "assistant":
+          return { role: m.role, content: m.content };
+        default:
+          return { role: "user", content: m.content };
+      }
+    })
+    .filter(Boolean) as ChatCompletionMessageParam[];
+}
 
 export type ChatCallInput = {
   model: string;
@@ -20,18 +52,24 @@ export type ChatCallInput = {
   signal?: AbortSignal;
 };
 
-export type ChatCallResult = {
-  ok: true;
-  modelUsed: string;
-  fallbackHit: boolean;
-  reply: string;
-  usage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number };
-  raw?: any; // rå OpenAI-respons for dyp debugging
-} | {
-  ok: false;
-  error: string;
-  modelTried?: string;
-};
+export type ChatCallResult =
+  | {
+      ok: true;
+      modelUsed: string;
+      fallbackHit: boolean;
+      reply: string;
+      usage?: {
+        promptTokens?: number;
+        completionTokens?: number;
+        totalTokens?: number;
+      };
+      raw?: any;
+    }
+  | {
+      ok: false;
+      error: string;
+      modelTried?: string;
+    };
 
 export async function chatCompletion({
   model,
@@ -41,10 +79,11 @@ export async function chatCompletion({
   enableFallback = true,
   signal,
 }: ChatCallInput): Promise<ChatCallResult> {
-  // Første forsøk
+  const apiMessages = toApiMessages(messages);
+
   try {
     const res = await openai.chat.completions.create(
-      { model, messages, temperature, stream: false },
+      { model, messages: apiMessages, temperature, stream: false },
       { signal }
     );
     const reply = res.choices?.[0]?.message?.content ?? "";
@@ -61,11 +100,15 @@ export async function chatCompletion({
       raw: res,
     };
   } catch (err: any) {
-    // Hvis fallback er skrudd på og vi har en alternativ modell, prøv én gang til
     if (enableFallback && fallbackModel && fallbackModel !== model) {
       try {
         const res2 = await openai.chat.completions.create(
-          { model: fallbackModel, messages, temperature, stream: false },
+          {
+            model: fallbackModel,
+            messages: apiMessages,
+            temperature,
+            stream: false,
+          },
           { signal }
         );
         const reply2 = res2.choices?.[0]?.message?.content ?? "";
@@ -111,10 +154,12 @@ export function streamFetchChat({
   temperature?: number;
   signal?: AbortSignal;
 }) {
+  const apiMessages = toApiMessages(messages);
+
   const body = JSON.stringify({
     model,
     stream: true,
-    messages,
+    messages: apiMessages,
     temperature,
   });
 
