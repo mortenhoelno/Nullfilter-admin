@@ -1,6 +1,7 @@
-// components/ChatEngine.js — NY VERSJON med auto-resize input + stabil ventetekst + anti-spam quick replies
+// components/ChatEngine.js — OPPDATERT med clientPerf-integrasjon
 
 import { useRef, useEffect, useState } from "react";
+import { createClientPerf } from "../utils/clientPerf"; // ⏱️ Importer perf-verktøy
 
 /**
  * @param {Object} props
@@ -29,6 +30,9 @@ export default function ChatEngine({
   const [displayedText, setDisplayedText] = useState("");
   const [fadeOut, setFadeOut] = useState(false);
   const [quickReplyCount, setQuickReplyCount] = useState(0);
+
+  // Ny: lokal perf-tracker for hver melding
+  const perfRef = useRef(null);
 
   // Scroll til bunnen når nye meldinger kommer
   useEffect(() => {
@@ -100,16 +104,34 @@ export default function ChatEngine({
   };
   const theme = colorMap[themeColor] || colorMap.blue;
 
+  // Wrapper for å koble perf → onSend
+  const handleSend = (text) => {
+    if (loading) return;
+    // start ny måling
+    perfRef.current = createClientPerf("chat");
+    perfRef.current.onSendClick();
+
+    // la parent håndtere selve sendingen
+    onSend(text, {
+      onRequestStart: () => perfRef.current?.onRequestStart(),
+      onDone: (extra) => {
+        const result = perfRef.current?.onDone(extra);
+        // result.response_ms er tallet vi skal lagre
+        console.log("⏱️ Ferdig response_ms:", result?.response_ms);
+        return result?.response_ms;
+      },
+    });
+  };
+
   const handleQuickReply = (s) => {
     if (loading) return;
     if (quickReplyCount >= 3) {
-      // humoristisk "glimt i øyet" melding fra boten
       onSend("Hei, skriver du eller har du sovnet på tastaturet? 😅");
       setQuickReplyCount(0);
       return;
     }
     setQuickReplyCount((c) => c + 1);
-    onSend(s);
+    handleSend(s);
   };
 
   return (
@@ -134,7 +156,7 @@ export default function ChatEngine({
           </div>
         ))}
 
-        {/* Ventemelding (reserverer plass nederst) */}
+        {/* Ventemelding */}
         <div className="min-h-[24px] flex items-center">
           {waitingMessage && (
             <div
@@ -171,7 +193,7 @@ export default function ChatEngine({
         <div ref={bottomRef} />
       </div>
 
-      {/* Inputfelt med auto-resize */}
+      {/* Inputfelt */}
       <div className="mt-3 flex gap-2">
         <textarea
           ref={textareaRef}
@@ -183,12 +205,12 @@ export default function ChatEngine({
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
-              onSend();
+              handleSend(input);
             }
           }}
         />
         <button
-          onClick={onSend}
+          onClick={() => handleSend(input)}
           disabled={loading}
           className={`px-4 py-2 rounded text-white ${theme.button} ${
             loading ? "opacity-50 cursor-not-allowed" : ""
