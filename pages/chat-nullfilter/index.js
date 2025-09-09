@@ -181,7 +181,7 @@ ${contextText ? `\nRelevante utdrag:\n${contextText}\n` : ""}
         <div className="space-y-2">
           <p className="font-medium">Hva vil du snakke om? Trykk på en boble:</p>
           <div className="flex flex-wrap gap-2">
-            {config.starters.map((msg, idx) => (
+            {(config.starters ?? []).map((msg, idx) => (
               <button
                 key={idx}
                 onClick={() => handleStarterClick(msg)}
