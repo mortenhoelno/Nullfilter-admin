@@ -54,7 +54,7 @@ export default async function handler(req, res) {
       const slice = rows.slice(i, i + BATCH);
       const { error } = await supabase
         .from("rag_chunks")
-        .upsert(slice, { onConflict: "doc_id,chunk_index" });
+        .upsert(slice, { onConflict: "doc_id,source_type,chunk_index" })
       if (error) throw error;
     }
 
