@@ -25,18 +25,22 @@ export const createConversation = async (email, bot = "nullfilter") => {
 };
 
 export const saveMessage = async (conversationId, message) => {
-  const { role, content } = message;
+  const { role, content, response_ms } = message; // ⏱️ Nytt felt støttes her
 
   const { error } = await supabase.from(TABLES.messages).insert({
     [messageFields.conversation_id]: conversationId,
     [messageFields.role]: role,
     [messageFields.content]: content,
+    response_ms: response_ms ?? null, // ⏱️ Lagrer hvis det finnes, ellers null
   });
 
   if (error) {
     console.error("❌ Feil ved lagring av melding:", error);
   } else {
-    console.log("💬 Melding lagret for:", conversationId);
+    console.log(
+      `💬 Melding lagret for: ${conversationId}` +
+      (response_ms ? ` (responstid: ${response_ms} ms)` : "")
+    );
   }
 };
 
