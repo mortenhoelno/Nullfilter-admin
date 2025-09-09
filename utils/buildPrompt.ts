@@ -22,14 +22,11 @@ export type PersonaConfig = {
 };
 
 export type BuildPromptInput = {
-  persona: PersonaConfig;               // kilde for systemPrompt, model, temperature
-  userPrompt: string;                   // det brukeren spør om
-  // Én av disse kan brukes for kontekst:
-  contextText?: string;                 // ferdig sammenslått kontekst
-  contextChunks?: string[];             // alternativt: rå-biter, vi setter sammen
-  // Historikk
-  history?: HistoryMessage[];           // tidligere meldinger (valgfritt)
-  // Overstyringer for eksperimenter / PromptStudio
+  persona: PersonaConfig;
+  userPrompt: string;
+  contextText?: string;
+  contextChunks?: string[];
+  history?: HistoryMessage[];
   overrideModel?: string;
   overrideTemperature?: number;
 };
@@ -37,9 +34,7 @@ export type BuildPromptInput = {
 export type BuildPromptResult = {
   model: string;
   temperature: number;
-  // Ferdig messages klar for OpenAI Chat Completions
   messages: Array<{ role: ChatRole; content: string }>;
-  // Ekstra metadata for logging/insights
   meta: {
     personaId?: string;
     hasContext: boolean;
@@ -48,7 +43,6 @@ export type BuildPromptResult = {
   };
 };
 
-/** Slår sammen RAG-kontekst i en egen blokk under systemprompten uten å overskrive personaens tone. */
 function composeSystemPrompt(baseSystem: string | undefined, contextText?: string): string {
   const parts: string[] = [];
   parts.push(baseSystem?.trim() || "Du er en varm, presis og hjelpsom assistent.");
@@ -62,7 +56,6 @@ function composeSystemPrompt(baseSystem: string | undefined, contextText?: strin
   return parts.join("\n");
 }
 
-/** Normaliser historikk: string → assistant, ellers bruk gitt role. */
 function normalizeHistory(history?: HistoryMessage[]): Array<{ role: ChatRole; content: string }> {
   if (!history || !Array.isArray(history)) return [];
   return history
