@@ -18,6 +18,7 @@
 // NB: Hvis du allerede har en native klient (pg / supabase-js med SQL-proxy), kan du erstatte implementasjonen av query().
 
 import { startPerf } from "./perf";
+import personaConfig, { globalPinnedDocId } from "../config/personaConfig";
 
 // --- Enkel cache av klient ---
 let cachedDb = null;
@@ -94,7 +95,6 @@ export async function vectorQuery(db, queryEmbedding, { topK = 6, minSim = 0.0 }
   perf.measure("rpc_recv", "rpc_send");
   perf.mark("__end");
   const snap = perf.snapshot({ rows: rows.length });
-  // Logg i dev for å se DB-tid per RPC-kall
   // console.debug("[DB vectorQuery PERF]", JSON.stringify(snap));
 
   return {
@@ -130,20 +130,67 @@ export async function fetchDocsByIds(db, ids) {
   }));
 }
 
-// utils/rag.js – BEHOLDT men tilpasset RPC
-export async function getRagContext(db, queryEmbedding, { topK = 6, minSim = 0.0, sourceType = null } = {}) {
-  // 1) vektorsøk
+/**
+ * fetchPinnedChunks()
+ * Henter alle chunks for et gitt dokument-id (uuid).
+ * @param {object} db
+ * @param {string} docId
+ * @returns {Promise<string[]>}
+ */
+export async function fetchPinnedChunks(db, docId) {
+  if (!docId) return [];
+  const docs = await fetchDocsByIds(db, [docId]);
+  return docs.map((d) => d.content || "");
+}
+
+/**
+ * getRagContext()
+ * Nå utvidet: alltid inkluderer globalPinnedDocId + ev. persona pinnedDocId, i tillegg til vanlige RAG-chunks.
+ *
+ * @param {object} db
+ * @param {number[]} queryEmbedding
+ * @param {{ topK?: number, minSim?: number, sourceType?: string, botId?: string }} options
+ * @returns {Promise<{ docs: any[], chunks: string[], meta: object }>}
+ */
+export async function getRagContext(
+  db,
+  queryEmbedding,
+  { topK = 6, minSim = 0.0, sourceType = null, botId = null } = {}
+) {
+  let allDocs = [];
+  let allChunks = [];
+
+  // 1) Global pinned (Mini-Morten)
+  if (globalPinnedDocId) {
+    const globalDocs = await fetchDocsByIds(db, [globalPinnedDocId]);
+    allDocs = [...allDocs, ...globalDocs];
+    allChunks = [...allChunks, ...globalDocs.map((d, i) => `### Doc G${i + 1}: ${d.title}\n${d.content}`)];
+  }
+
+  // 2) Persona pinned (hvis definert for botId)
+  if (botId && personaConfig[botId]?.pinnedDocId) {
+    const personaId = personaConfig[botId].pinnedDocId;
+    const personaDocs = await fetchDocsByIds(db, [personaId]);
+    allDocs = [...allDocs, ...personaDocs];
+    allChunks = [...allChunks, ...personaDocs.map((d, i) => `### Doc P${i + 1}: ${d.title}\n${d.content}`)];
+  }
+
+  // 3) Dynamiske RAG-chunks
   const { ids } = await vectorQuery(db, queryEmbedding, { topK, minSim, sourceType });
-
-  // 2) hent dokument-chunks i samme rekkefølge
-  const docs = await fetchDocsByIds(db, ids);
-
-  // 3) bygg kontekstdeler slik UI'en forventer
-  const chunks = docs.map((d, i) => `### Doc ${i + 1}: ${d.title}\n${d.content}`);
+  const ragDocs = await fetchDocsByIds(db, ids);
+  allDocs = [...allDocs, ...ragDocs];
+  allChunks = [...allChunks, ...ragDocs.map((d, i) => `### Doc R${i + 1}: ${d.title}\n${d.content}`)];
 
   return {
-    docs,          // array med { id, title, content }
-    chunks,        // preformatert tekstblokker
-    meta: { topK, returned: docs.length, minSim, sourceType },
+    docs: allDocs, // alle dokumenter (global + persona + rag)
+    chunks: allChunks, // preformatert tekstblokker
+    meta: {
+      topK,
+      returned: ragDocs.length,
+      minSim,
+      sourceType,
+      globalPinned: globalPinnedDocId ? 1 : 0,
+      personaPinned: botId && personaConfig[botId]?.pinnedDocId ? 1 : 0,
+    },
   };
 }
