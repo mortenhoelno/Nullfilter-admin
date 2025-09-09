@@ -481,7 +481,7 @@ function HomePage() {
             <div className="p-3 rounded-xl bg-gray-100">
               <div className="text-gray-500">Hastighet</div>
               <div className="text-xl font-semibold">{rate ? `${rate.toFixed(1)} r/s` : "—"}</div>
-            </div }
+            </div>
             <div className="p-3 rounded-xl bg-gray-100">
               <div className="text-gray-500">ETA</div>
               <div className="text-xl font-semibold">{fmtSeconds(etaSec)}</div>
