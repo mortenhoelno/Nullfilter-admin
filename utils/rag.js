@@ -30,14 +30,20 @@ let cachedDb = null;
 export async function getDbClient() {
   if (cachedDb) return cachedDb;
 
-  const baseUrl = process.env.DB_HTTP_URL;
-  const token = process.env.DB_HTTP_TOKEN;
+  let baseUrl = process.env.DB_HTTP_URL;
+let token = process.env.DB_HTTP_TOKEN;
 
-  if (!baseUrl || !token) {
-    throw new Error(
-      "DB_HTTP_URL/DB_HTTP_TOKEN mangler. Sett disse env-variablene eller bytt implementasjon av getDbClient()."
-    );
-  }
+if (!baseUrl || !token) {
+  baseUrl = process.env.SUPABASE_URL;
+  token = process.env.SUPABASE_SERVICE_ROLE_KEY;
+}
+
+if (!baseUrl || !token) {
+  throw new Error(
+    "Mangler DB_HTTP_URL/DB_HTTP_TOKEN eller SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY. Sett env-variablene i Vercel."
+  );
+}
+
 
   // Minimal HTTP-klient. Du kan bytte ut med pg/supabase-js ved behov.
   const client = {
