@@ -110,7 +110,6 @@
 
 Når en bot (f.eks. NullFilter eller Keepertrening) bygger systemprompten, ser rekkefølgen slik ut:
 
-```text
 [ SYSTEMPROMPT FRA PERSONA ]
 "Du er en vennlig og kunnskapsrik chatbot ..."
 
