@@ -1,7 +1,4 @@
 // components/FeatureFlagsPanel.js
-// Enkel feature flag-panel som snakker med /api/feature-flags (in-memory).
-// Trygt å bruke i dev – kan senere byttes til Supabase-tabell uten å endre UI.
-
 import { useEffect, useState } from "react";
 
 const DEFAULT_FLAGS = {
@@ -101,8 +98,7 @@ export default function FeatureFlagsPanel() {
       </div>
 
       <p className="mt-3 text-xs text-gray-500">
-        * Disse lagres i minnet på serverprosess (volatil). Perfekt for dev og
-        eksperimentering. Vi kan senere peke dette mot en Supabase-tabell.
+        * Lagres i minnet på server (volatil) nå. Vi kan peke mot Supabase senere.
       </p>
     </section>
   );
