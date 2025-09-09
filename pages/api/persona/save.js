@@ -1,41 +1,40 @@
-// pages/api/persona/save.js — NY
+// pages/api/persona/save.js
+// Lagrer persona for en bot. Bruker Supabase-tabell 'persona_settings' hvis mulig,
+// ellers in-memory fallback (dev). Tabellforventning: persona_settings(bot_id text PK, data jsonb)
+
 import { getSupabaseServer } from "../../../utils/supabaseServer";
+import { __PERSONA_MEMORY_STORE__ as MEMORY } from "./get";
 
 export const config = { runtime: "nodejs" };
 
 export default async function handler(req, res) {
   try {
-    if (req.method !== "POST") return res.status(405).json({ error: "Only POST allowed" });
+    if (req.method !== "POST") return res.status(405).json({ ok: false, error: "Only POST allowed" });
+
     const { botId, patch } = req.body || {};
-    if (!botId || typeof patch !== "object") {
-      return res.status(400).json({ error: "Missing botId or patch" });
+    if (!botId || !patch) return res.status(400).json({ ok: false, error: "Missing botId or patch" });
+
+    // 1) Supabase?
+    if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      const supabase = getSupabaseServer();
+
+      // Upsert
+      const { data, error } = await supabase
+        .from("persona_settings")
+        .upsert({ bot_id: botId, data: patch }, { onConflict: "bot_id" })
+        .select("bot_id")
+        .maybeSingle();
+
+      if (!error) {
+        return res.status(200).json({ ok: true, message: "Lagret i Supabase ✅", botId: data?.bot_id || botId });
+      }
     }
 
-    const supabase = getSupabaseServer();
-
-    // Sørg for at tabellen finnes i din DB:
-    // create table if not exists persona_settings(
-    //   bot_id text primary key,
-    //   data jsonb not null,
-    //   updated_at timestamptz default now()
-    // );
-
-    // Oppdater / upsert
-    const { error } = await supabase
-      .from("persona_settings")
-      .upsert({ bot_id: botId, data: patch, updated_at: new Date().toISOString() }, { onConflict: "bot_id" });
-
-    if (error) return res.status(500).json({ error: String(error.message || error) });
-
-    // Audit logg
-    await supabase.from("admin_audit_log").insert({
-      actor: "dashboard",
-      action: "persona.save",
-      payload: { botId, patch },
-    });
-
-    return res.status(200).json({ ok: true });
+    // 2) Fallback – in-memory (dev)
+    MEMORY.set(botId, patch);
+    return res.status(200).json({ ok: true, message: "Lagret i minnet (dev) ✅", botId });
   } catch (err) {
-    return res.status(500).json({ error: String(err?.message || err) });
+    console.error("[/api/persona/save] error:", err);
+    return res.status(500).json({ ok: false, error: String(err?.message || err) });
   }
 }
