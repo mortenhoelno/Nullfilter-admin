@@ -1,5 +1,5 @@
 // FERDIG VERSJON: pages/chat-keepertrening/index.js
-// Keepertrening-chat med responstid-logging + starter-fallback + ekte API-kall
+// Keepertrening-chat med responstid-logging + starter-fallback + ekte API-kall (JSON-format fikset)
 
 import { useState, useEffect } from "react";
 import {
@@ -48,7 +48,9 @@ export default function KeepertreningChat() {
     if (!toSend) return;
 
     const newMessage = { role: "user", content: toSend };
-    setMessages((prev) => [...prev, newMessage]);
+    const updatedMessages = [...messages, newMessage];
+
+    setMessages(updatedMessages);
     setChatInput("");
     if (conversation) await saveMessage(conversation.id, newMessage);
 
@@ -60,7 +62,7 @@ export default function KeepertreningChat() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           botId: "keepertrening",
-          messages: [...messages, newMessage], // ✅ riktig format til API
+          messages: updatedMessages, // 🔄 Viktig: API forventer messages-array
         }),
       });
 
