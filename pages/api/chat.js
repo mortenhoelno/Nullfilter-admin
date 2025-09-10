@@ -1,31 +1,13 @@
 // pages/api/chat.js
 import { startPerf } from "../../utils/perf";
-import { getDbClient, getRagContext } from "../../utils/rag"; // 🔄 bruker getRagContext nå
+import { getDbClient, getRagContext } from "../../utils/rag"; 
 import { tokenGuard } from "../../utils/tokenGuard";
 import personaConfig from "../../config/personaConfig";
-
-// ⬇️ Nye utiler (bevarer eksisterende adferd, bare ryddigere)
 import { buildPrompt } from "../../utils/buildPrompt";
 import { streamFetchChat } from "../../utils/llmClient";
-
-// 🔄 Import for å generere embedding
 import OpenAI from "openai";
 
 export const config = { runtime: "nodejs" };
-
-function sseEvent({ event, data }) {
-  return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-}
-
-function getBaseUrl(req) {
-  try {
-    const proto = (req.headers["x-forwarded-proto"] || "").toString().split(",")[0] || "http";
-    const host = req.headers.host || "localhost:3000";
-    return `${proto}://${host}`;
-  } catch {
-    return "http://localhost:3000";
-  }
-}
 
 function lastUserFromMessages(messages) {
   if (!Array.isArray(messages)) return "";
@@ -47,36 +29,32 @@ export default async function handler(req, res) {
   const mark = (name) => perf.mark(name);
 
   try {
+    if (req.method !== "POST") {
+      return res.status(405).json({ error: "Method not allowed" });
+    }
+
     mark("req_in");
 
-    // SSE-headere
-    res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
-    res.setHeader("Cache-Control", "no-cache, no-transform");
-    res.setHeader("Connection", "keep-alive");
-    res.setHeader("X-Accel-Buffering", "no");
-    res.setHeader("Transfer-Encoding", "chunked");
-    res.setHeader("Trailer", "Server-Timing");
-
-    const absBase = getBaseUrl(req);
-    const url = new URL(req.url || "/api/chat", absBase);
-
-    const qp = Object.fromEntries(url.searchParams);
-    const body = (req.method === "POST" && typeof req.body === "object") ? req.body : {};
+    const body = req.body || {};
 
     const userPrompt =
       (typeof body?.q === "string" && body.q) ||
       lastUserFromMessages(body?.messages) ||
-      (qp.q ?? "").toString();
+      "";
 
-    const topK = Number((body?.topK ?? qp.topK) ?? 6);
-    const minSim = Number((body?.minSim ?? qp.minSim) ?? 0.0);
-    const botId = (body?.botId ?? qp.botId) || "nullfilter";
+    if (!userPrompt) {
+      return res.status(400).json({ error: "Mangler brukerprompt" });
+    }
+
+    const topK = Number(body?.topK ?? 6);
+    const minSim = Number(body?.minSim ?? 0.0);
+    const botId = body?.botId || "nullfilter";
 
     const persona = personaConfig[botId];
     if (!persona) throw new Error(`Ukjent botId: ${botId}`);
     const { tokenBudget } = persona;
 
-    // 🔄 Generer embedding for brukerens prompt
+    // 🔄 Embedding
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     const embRes = await openai.embeddings.create({
       model: "text-embedding-3-small",
@@ -84,30 +62,28 @@ export default async function handler(req, res) {
     });
     const queryEmbedding = embRes.data[0].embedding;
 
-    // DB → vector query → hent docs
+    // 🔄 DB → RAG
     mark("db_connect_start");
     const db = await getDbClient();
     measure("db_connect_end", "db_connect_start");
 
     mark("rag_query_start");
-    const ragRes = await getRagContext(db, queryEmbedding, { topK, minSim });
+    const ragRes = await getRagContext(db, queryEmbedding, { topK, minSim, botId });
     measure("rag_query_end", "rag_query_start");
 
     const docs = ragRes.docs;
     const contextChunks = ragRes.chunks;
 
-    // Budsjett til tokenGuard (fra personaConfig)
     const maxTokens =
       (tokenBudget?.pinnedMax ?? 0) +
       (tokenBudget?.ragMax ?? 0) +
       (tokenBudget?.replyMax ?? 0);
 
-    // Bygg system+messages via util — KONTEKST appender under systemprompt
     const promptPack = buildPrompt({
       persona,
       userPrompt,
       contextChunks,
-      history: [], // ingen historikk her
+      history: [],
     });
 
     const guard = tokenGuard({
@@ -121,32 +97,13 @@ export default async function handler(req, res) {
     });
 
     if (!guard.isValid) {
-      res.write(
-        sseEvent({
-          event: "error",
-          data: {
-            message: "Prompten ble for lang. Prøv å skrive spørsmålet litt kortere.",
-            droppedChunks: guard.droppedChunks,
-          },
-        })
-      );
-      res.end();
-      return;
+      return res.status(400).json({
+        error: "Prompten ble for lang. Prøv å skrive spørsmålet litt kortere.",
+        droppedChunks: guard.droppedChunks,
+      });
     }
 
-    res.write(
-      sseEvent({
-        event: "meta",
-        data: {
-          timingHint: "init",
-          steps: [...stepLog],
-          rag: { topK, returned: docs.length, minSim },
-          tokens: { input: guard.total },
-          model: promptPack.model,
-        },
-      })
-    );
-
+    // 🔄 Kjør LLM
     mark("llm_req_start");
     const llmReqStartWall = Date.now();
 
@@ -165,49 +122,31 @@ export default async function handler(req, res) {
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
 
+    let outputText = "";
     let sawFirstToken = false;
-    let clientFirstChunkSent = false;
-    let outputChars = 0;
-    let outputChunks = 0;
-    let outputBytes = 0;
 
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-
       const raw = decoder.decode(value, { stream: true });
-      outputBytes += value.byteLength;
 
       const lines = raw.split(/\r?\n/);
       for (const line of lines) {
         if (!line.startsWith("data:")) continue;
-
         const payload = line.slice(5).trim();
         if (payload === "[DONE]") continue;
-
         try {
           const json = JSON.parse(payload);
           const delta = json?.choices?.[0]?.delta?.content ?? "";
           if (!sawFirstToken && (delta?.length || json?.choices?.[0]?.delta?.role)) {
             sawFirstToken = true;
-            mark("llm_first_token");
             measure("llm_first_token", "llm_http_send");
           }
-
           if (delta) {
-            outputChars += delta.length;
-            outputChunks += 1;
-
-            if (!clientFirstChunkSent) {
-              clientFirstChunkSent = true;
-              mark("client_first_chunk");
-              measure("client_first_chunk", "llm_req_start");
-            }
-
-            res.write(sseEvent({ event: "delta", data: { t: Date.now(), text: delta } }));
+            outputText += delta;
           }
         } catch {
-          // ignorér parsefeil i stream
+          // ignorér parsefeil
         }
       }
     }
@@ -215,53 +154,34 @@ export default async function handler(req, res) {
     mark("llm_stream_ended");
     measure("llm_stream_ended", "llm_req_start");
 
-    const outputTokens = perf.estimateTokens("x".repeat(Math.max(0, outputChars)));
-    mark("__end");
-
     const snap = perf.snapshot({
-      tokens: { input: guard.total, output: outputTokens },
+      tokens: { input: guard.total, output: perf.estimateTokens(outputText) },
       llm: {
         model: promptPack.model,
         requestStartedAt: new Date(llmReqStartWall).toISOString(),
         output: {
-          chars: outputChars,
-          chunks: outputChunks,
-          bytes: outputBytes,
+          chars: outputText.length,
         },
       },
       rag: { topK, returned: docs.length, minSim },
       steps: [...stepLog],
     });
 
-    res.write(sseEvent({ event: "done", data: snap }));
-
-    if (typeof res.addTrailers === "function") {
-      res.addTrailers({ "Server-Timing": perf.serverTimingHeader() });
-    }
-
-    res.end();
-    console.log("[CHAT PERF]", JSON.stringify(snap, null, 2));
+    return res.status(200).json({
+      reply: outputText,
+      rag: {
+        ai_hits: docs.filter((d) => d.source_type === "ai").length,
+        master_hits: docs.filter((d) => d.source_type === "master").length,
+      },
+      tokenGuard: guard,
+      modelUsed: promptPack.model,
+      fallbackHit: false,
+      topKUsed: topK,
+      minSimUsed: minSim,
+      perf: snap,
+    });
   } catch (err) {
-    try {
-      const message = String(err?.message || err);
-      const code = /HTTP\s+(\d+)/.exec(message)?.[1] ?? "500";
-      if (!res.headersSent) {
-        res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
-        res.setHeader("Cache-Control", "no-cache, no-transform");
-        res.setHeader("Connection", "keep-alive");
-      }
-      res.write(sseEvent({ event: "error", data: { message, code } }));
-      if (typeof res.addTrailers === "function") {
-        res.addTrailers({ "Server-Timing": perf.serverTimingHeader() });
-      }
-      res.end();
-    } catch {
-      if (!res.headersSent) {
-        res.status(500).json({ error: String(err) });
-      } else {
-        res.end();
-      }
-    }
     console.error("chat error", err);
+    return res.status(500).json({ error: String(err?.message || err) });
   }
 }
