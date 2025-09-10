@@ -55,14 +55,14 @@ export default function KeepertreningChat() {
     try {
       perfCallbacks.onRequestStart?.();
 
-     const res = await fetch("/api/chat", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    botId: "keepertrening",   // eller "nullfilter"
-    messages: [...messages, newMessage], // 👈 viktig
-  }),
-});
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          botId: "keepertrening",
+          messages: [...messages, newMessage], // ✅ riktig format til API
+        }),
+      });
 
       if (!res.ok) {
         throw new Error(`Chat API feilet: ${res.status}`);
