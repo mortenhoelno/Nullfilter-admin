@@ -1,6 +1,6 @@
 // pages/api/chat.js
 import { startPerf } from "../../utils/perf";
-import { getDbClient, getRagContext } from "../../utils/rag"; 
+import { getDbClient, getRagContext } from "../../utils/rag";
 import { tokenGuard } from "../../utils/tokenGuard";
 import personaConfig from "../../config/personaConfig";
 import { buildPrompt } from "../../utils/buildPrompt";
@@ -37,6 +37,7 @@ export default async function handler(req, res) {
 
     const body = req.body || {};
 
+    // Hent siste melding som prompt
     const userPrompt =
       (typeof body?.q === "string" && body.q) ||
       lastUserFromMessages(body?.messages) ||
@@ -79,18 +80,23 @@ export default async function handler(req, res) {
       (tokenBudget?.ragMax ?? 0) +
       (tokenBudget?.replyMax ?? 0);
 
+    // Bruk historikk fra body.messages hvis det finnes
+    const historyMessages = Array.isArray(body?.messages)
+      ? body.messages.slice(0, -1)
+      : [];
+
     const promptPack = buildPrompt({
       persona,
       userPrompt,
       contextChunks,
-      history: [],
+      history: historyMessages,
     });
 
     const guard = tokenGuard({
       systemPrompt: promptPack.messages[0]?.content || "",
       userPrompt,
       contextChunks,
-      historyMessages: [],
+      historyMessages: historyMessages.map((m) => m.content),
       maxTokens,
       replyMax: persona?.tokenBudget?.replyMax ?? 1200,
       model: promptPack.model,
