@@ -58,8 +58,7 @@ Du har tilgang til relevante tekster og strategier som skal brukes som svargrunn
       ragMax: 1000,
       replyMax: 1000
     },
-    // 📚 Bot-spesifikk pinned (fra DB/admin i stedet for hardkodet global)
-    pinnedDocId: "43ef1473-3c48-4caf-bc6d-8a2a3fde9f7a",
+    // ❌ pinnedDocId fjernet – bruker global pinned (Mini-Morten)
     systemPrompt: `
 Du er Keeperbot – en motiverende og trygg støtte for unge målvakter som vil forbedre seg mentalt og fysisk.
 
