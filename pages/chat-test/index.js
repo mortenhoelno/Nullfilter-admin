@@ -12,3 +12,7 @@ export default function ChatTestPage() {
     </div>
   );
 }
+
+export async function getServerSideProps() {
+  return { props: {} };
+}
