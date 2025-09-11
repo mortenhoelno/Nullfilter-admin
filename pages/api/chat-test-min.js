@@ -2,6 +2,7 @@ export const config = {
   runtime: "edge", // vi vil unngå buffering
 };
 
+
 export default async function handler(req) {
   if (req.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
