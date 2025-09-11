@@ -1,5 +1,5 @@
 export const config = {
-  runtime: "nodejs", // bruker Node runtime for enklere streaming-debug
+  runtime: "nodejs",
 };
 
 export default async function handler(req, res) {
@@ -11,12 +11,17 @@ export default async function handler(req, res) {
   const body = await new Promise((resolve) => {
     let data = "";
     req.on("data", (chunk) => (data += chunk));
-    req.on("end", () => resolve(JSON.parse(data || "{}")));
+    req.on("end", () => {
+      try {
+        resolve(JSON.parse(data || "{}"));
+      } catch {
+        resolve({});
+      }
+    });
   });
 
   const userPrompt = body?.q || "Hei, gi meg et eksempel på tekst";
 
-  // Start SSE-respons
   res.writeHead(200, {
     "Content-Type": "text/event-stream; charset=utf-8",
     "Cache-Control": "no-cache, no-transform",
@@ -33,7 +38,7 @@ export default async function handler(req, res) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "gpt-4o-mini", // 👈 kjører på 4o-mini
+      model: "gpt-4o-mini", // 👈 tester denne modellen
       stream: true,
       messages: [
         { role: "system", content: "Du er en hjelpsom test-bot." },
@@ -82,8 +87,12 @@ export default async function handler(req, res) {
           res.write(`data: ${JSON.stringify({ text: delta })}\n\n`);
         }
       } catch {
-        // Ignorerer ufullstendige linjer
+        // Ignorer uferdige JSON-linjer
       }
     }
   }
+
+  // Fallback: sørg for at vi avslutter alltid
+  res.write(`event: end\ndata: {"forced":true}\n\n`);
+  res.end();
 }
