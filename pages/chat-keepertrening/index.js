@@ -60,7 +60,7 @@ export default function KeepertreningChat() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           botId: "keepertrening",
-          messages: [...messages, newMessage], // 🔄 viktig: API forventer messages-array
+          messages: [...messages, newMessage], // 🔄 sender messages-array
         }),
       });
 
