@@ -1,7 +1,4 @@
 // utils/llmClient.ts
-// Tynn klient rundt OpenAI Chat Completions med valgfri fallback-modell og en enkel stream-hjelper.
-// Bevarer eksisterende mønstre: du kan fortsatt bruke fetch+SSE i /api/chat hvis du vil.
-
 import { OpenAI } from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 
@@ -15,7 +12,6 @@ export type ChatMessage = {
   tool_call_id?: string;
 };
 
-// ✅ Ny: konvertering fra ChatMessage → ChatCompletionMessageParam
 function toApiMessages(messages: ChatMessage[]): ChatCompletionMessageParam[] {
   return messages
     .map((m) => {
@@ -46,9 +42,9 @@ export type ChatCallInput = {
   model: string;
   messages: ChatMessage[];
   temperature?: number;
-  stream?: false;              // non-stream kallet – returnerer ferdig tekst
-  fallbackModel?: string;      // f.eks. "gpt-4o-mini"
-  enableFallback?: boolean;    // default true
+  stream?: false;
+  fallbackModel?: string;
+  enableFallback?: boolean;
   signal?: AbortSignal;
 };
 
@@ -81,10 +77,11 @@ export async function chatCompletion({
 }: ChatCallInput): Promise<ChatCallResult> {
   const apiMessages = toApiMessages(messages);
 
-  // 👇 Lag payload uten temperature for gpt-5-mini
   const basePayload: any = { model, messages: apiMessages, stream: false };
   if (!model.startsWith("gpt-5-mini")) {
     basePayload.temperature = temperature;
+  } else if (temperature !== 1 && temperature !== undefined) {
+    console.warn(`⚠️ Ignorerer temperature=${temperature} for ${model} (kun default 1 støttes)`);
   }
 
   try {
@@ -112,6 +109,10 @@ export async function chatCompletion({
         };
         if (!fallbackModel.startsWith("gpt-5-mini")) {
           fbPayload.temperature = temperature;
+        } else if (temperature !== 1 && temperature !== undefined) {
+          console.warn(
+            `⚠️ Ignorerer temperature=${temperature} for ${fallbackModel} (kun default 1 støttes)`
+          );
         }
         const res2 = await openai.chat.completions.create(fbPayload, { signal });
         const reply2 = res2.choices?.[0]?.message?.content ?? "";
@@ -139,13 +140,6 @@ export async function chatCompletion({
   }
 }
 
-/**
- * Hjelper for eksisterende SSE/stream-mønster (slik /api/chat.js bruker i dag).
- * Returnerer en standard fetch() Promise<Response> så du kan lese .body.getReader() som før.
- *
- * OBS: Denne funksjonen streamer rå OpenAI-svar (uparsede deltaer).
- * Du beholder full kontroll i API-routen.
- */
 export function streamFetchChat({
   model,
   messages,
@@ -167,6 +161,8 @@ export function streamFetchChat({
 
   if (!model.startsWith("gpt-5-mini")) {
     payload.temperature = temperature;
+  } else if (temperature !== 1 && temperature !== undefined) {
+    console.warn(`⚠️ Ignorerer temperature=${temperature} for ${model} (kun default 1 støttes)`);
   }
 
   return fetch("https://api.openai.com/v1/chat/completions", {
