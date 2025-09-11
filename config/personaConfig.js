@@ -1,6 +1,8 @@
 // config/personaConfig.js
 
-// 📚 Konfig for alle bots (uten hardkodet global pinned – styres fra admin/DB)
+// 📚 Dokument som alltid skal med i ALLE bots (Mini-Morten UUID, global pinned)
+const globalPinnedDocId = "55102264-5908-466a-be0e-68c666a3add6";
+
 const personaConfig = {
   nullfilter: {
     name: "Nullfilter",
@@ -14,7 +16,7 @@ const personaConfig = {
 
     // 🎯 Maks tokens for hver del
     tokenBudget: {
-      pinnedMax: 600,   // Pinned fra DB/admin
+      pinnedMax: 600,   // Pinned fra DB/admin (global)
       ragMax: 1200,     // Relevante chunks
       replyMax: 1200    // Maks tokens i svaret
     },
@@ -50,15 +52,22 @@ Du har tilgang til relevante tekster og strategier som skal brukes som svargrunn
 
   keepertrening: {
     name: "Keepertrening",
-    model: "gpt-5-mini",
+
+    // 📌 Modellvalg (samme som Nullfilter nå)
+    model: "gpt-4o-mini",
     fallbackModel: "gpt-4o",
-    temperature: 0.3,
+
+    // 🌡️ Temperatur
+    temperature: 0.2,
+
+    // 🎯 Samme token-budsjett
     tokenBudget: {
-      pinnedMax: 400,
-      ragMax: 1000,
-      replyMax: 1000
+      pinnedMax: 600,
+      ragMax: 1200,
+      replyMax: 1200
     },
-    // ❌ pinnedDocId fjernet – bruker global pinned (Mini-Morten)
+
+    // 📜 Systemprompt (egen identitet)
     systemPrompt: `
 Du er Keeperbot – en motiverende og trygg støtte for unge målvakter som vil forbedre seg mentalt og fysisk.
 
@@ -67,6 +76,7 @@ Du kombinerer pedagogikk med konkret teknikk, og hjelper dem å analysere egne t
 Du snakker enkelt, bruker eksempler fra idrett, og styrker selvtillit gjennom innsikt og mental trening.
     `.trim(),
 
+    // 🌟 Intro og bobler
     intro: "Hei, jeg er Keeperbot 🧤 Klar for å trene reaksjon og fokus?",
     starters: [
       "Hvordan kan jeg bli raskere på reflekser?",
@@ -77,4 +87,5 @@ Du snakker enkelt, bruker eksempler fra idrett, og styrker selvtillit gjennom in
   }
 };
 
+export { globalPinnedDocId };
 export default personaConfig;
