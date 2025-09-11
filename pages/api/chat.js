@@ -11,7 +11,6 @@ export const config = { runtime: "nodejs" };
 
 function lastUserFromMessages(messages) {
   if (!Array.isArray(messages)) return "";
-  // Gå baklengs og finn siste melding med role="user"
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
     if (m?.role === "user" && typeof m.content === "string" && m.content.trim()) {
@@ -39,7 +38,6 @@ export default async function handler(req, res) {
     mark("req_in");
 
     const body = req.body || {};
-
     const userPrompt =
       (typeof body?.q === "string" && body.q) ||
       lastUserFromMessages(body?.messages) ||
@@ -82,7 +80,7 @@ export default async function handler(req, res) {
       (tokenBudget?.ragMax ?? 0) +
       (tokenBudget?.replyMax ?? 0);
 
-    // 🧱 Prompt-build (ny måling)
+    // 🧱 Prompt-build
     mark("prompt_build_start");
     const promptPack = buildPrompt({
       persona,
@@ -92,7 +90,7 @@ export default async function handler(req, res) {
     });
     measure("prompt_build_end", "prompt_build_start");
 
-    // 🛡️ TokenGuard (valgfritt å se egen kost – liten, men nyttig)
+    // 🛡️ TokenGuard
     mark("guard_eval_start");
     const guard = tokenGuard({
       systemPrompt: promptPack.messages[0]?.content || "",
@@ -116,6 +114,15 @@ export default async function handler(req, res) {
     mark("llm_req_start");
     const llmReqStartWall = Date.now();
 
+    // 🐛 Debug-logg: hva vi sender inn
+    console.log("🧠 LLM request →", {
+      model: promptPack.model,
+      messagesCount: promptPack.messages.length,
+      temperature: promptPack.temperature,
+      maxTokens,
+      replyMax: persona?.tokenBudget?.replyMax,
+    });
+
     const resp = await streamFetchChat({
       model: promptPack.model,
       messages: promptPack.messages,
@@ -125,6 +132,12 @@ export default async function handler(req, res) {
     mark("llm_http_send");
 
     if (!resp.ok || !resp.body) {
+      // 🐛 Debug: logg hele error-body fra OpenAI
+      let errText = "";
+      try {
+        errText = await resp.text();
+      } catch {}
+      console.error("❌ LLM error response:", resp.status, errText);
       throw new Error(`LLM HTTP ${resp.status}`);
     }
 
@@ -163,18 +176,12 @@ export default async function handler(req, res) {
     mark("llm_stream_ended");
     measure("llm_stream_ended", "llm_req_start");
 
-    // 🧮 Perf-breakdown (nytt): aggreger kjedetider
+    // 🧮 Perf-breakdown
     const get = (n) => stepLog.find((s) => s.name === n)?.ms || 0;
-    // RAG = DB connect + query
     const rag_ms = get("db_connect_end") + get("rag_query_end");
-    // Prompt = build + guard
     const prompt_ms = get("prompt_build_end") + get("guard_eval_end");
-    // LLM = fra request start til stream ferdig
     const llm_ms = get("llm_stream_ended");
-    // TTFT (first token)
     const llm_ttft_ms = get("llm_first_token");
-
-    // Total fra request inn til nå
     const total_ms = measure("handler_total", "req_in");
 
     const snap = perf.snapshot({
@@ -195,7 +202,6 @@ export default async function handler(req, res) {
       breakdown: { rag_ms, prompt_ms, llm_ms, llm_ttft_ms, total_ms },
     };
 
-    // Litt synlig logging i Vercel for rask lesing
     console.log("⏱️ perf breakdown:", { rag_ms, prompt_ms, llm_ms, llm_ttft_ms, total_ms });
 
     return res.status(200).json({
@@ -209,8 +215,8 @@ export default async function handler(req, res) {
       fallbackHit: false,
       topKUsed: topK,
       minSimUsed: minSim,
-      perf: perfOut,                 // hele perf-snapshotet
-      perf_breakdown: perfOut.breakdown, // lett tilgjengelig på toppnivå
+      perf: perfOut,
+      perf_breakdown: perfOut.breakdown,
     });
   } catch (err) {
     console.error("chat error", err);
