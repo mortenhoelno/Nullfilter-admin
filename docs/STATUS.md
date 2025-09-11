@@ -1,10 +1,10 @@
 # 🚀 STATUS – Chatbot-prosjektet
 
 ### Dato
-- **09.09.2025**
+- **11.09.2025**
 
 ### Versjon
-- **v0.2.8 – Smooth Operator 💅🚀**
+- **v0.2.9 – Latency Detective 🕵️⏱️**
 
 ---
 
@@ -26,9 +26,13 @@
   - admin.js — Admin-grensesnitt (dokumenter)
   - **chat-nullfilter/** — NullFilter-chatbot (mental helse, intro + bobler)
   - **chat-keepertrening/** — Keepertrening-chatbot (idrett, intro + bobler)
+  - **chat-test/** — Testbot (frontend med SSE)
+  - **chat-test-min/** — Testbot med minimal prompt
   - **api/**
     - chat.js — Chat-endepunkt (OpenAI GPT-5 med fallback)
     - rag/chat.js — Chat med RAG og dokumentstøtte
+    - chat-test-sse.js — API med SSE-streaming
+    - chat-test-min.js — Minimal prompt-API for ytelsestest
     - chat-stats.js — Statistikk for responstid og modellbruk
     - ... øvrige RAG/embedding-endepunkter
 
@@ -47,7 +51,7 @@
 
 - **components/**
   - ChatEngine.js — Frontend-chatkomponent (nå med perf-integrasjon)
-
+  - ChatEngineTest.js — Enkel testkomponent for SSE/latensmåling
 ---
 
 ## 2. Databaseoversikt
@@ -141,6 +145,7 @@ User: "Hvordan kan jeg roe meg ned når tankene spinner?"
 - [ ] Visuell PromptStudio UI (redigere personaConfig).
 - [ ] Flere dokumenter inn i RAG for test.
 - [ ] QA & fallback-test ved nettverksfeil.
+- [ ] Analysere Vercel-buffering nærmere og vurdere alternativer (Edge vs Node vs direkte kall).
 
 ---
 
@@ -174,6 +179,21 @@ User: "Hvordan kan jeg roe meg ned når tankene spinner?"
 - Break-even v/300 brukere
 
 ---
+
+## 9. Ytelsesanalyse: Promptstørrelse & Infrastruktur
+- **Stor prompt (≈2700 tokens, pinned + RAG)**  
+  → Responstid 15–22 sek, hvor modellen genererer ekstremt tregt (~8 tokens/s).  
+  → Konklusjon: *GPT-5-mini blir ubrukelig treg på store prompts.*
+
+- **Minimal prompt (kun system + user)**  
+  → Første bokstav på skjerm etter ~3,6 sek.  
+  → Backend (OpenAI) leverte første token på ~6 ms, så forsinkelsen kommer i Vercel/Edge/Frontend.  
+  → Konklusjon: *ca. 3 sek grunnlatens oppstår i kjeden Vercel → Edge → nettleser, selv uten RAG.*
+
+- **To problemer samtidig**:  
+  1. Prompt-størrelse gjør modellen treg.  
+  2. Vercel-strømmen legger på fast latens (~3 sek).
+
 
 ## 1000. Changelog
 
