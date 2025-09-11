@@ -1,6 +1,6 @@
 // pages/api/chat.js
 import { startPerf } from "../../utils/perf";
-import { getDbClient, getRagContext } from "../../utils/rag";
+import { getDbClient, getRagContext } from "../../utils/rag"; 
 import { tokenGuard } from "../../utils/tokenGuard";
 import personaConfig from "../../config/personaConfig";
 import { buildPrompt } from "../../utils/buildPrompt";
@@ -11,9 +11,12 @@ export const config = { runtime: "nodejs" };
 
 function lastUserFromMessages(messages) {
   if (!Array.isArray(messages)) return "";
+  // Gå baklengs og finn siste melding med role="user"
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
-    if (m?.role === "user" && typeof m.content === "string") return m.content;
+    if (m?.role === "user" && typeof m.content === "string" && m.content.trim()) {
+      return m.content.trim();
+    }
   }
   return "";
 }
@@ -37,7 +40,6 @@ export default async function handler(req, res) {
 
     const body = req.body || {};
 
-    // Hent siste melding som prompt
     const userPrompt =
       (typeof body?.q === "string" && body.q) ||
       lastUserFromMessages(body?.messages) ||
@@ -80,23 +82,18 @@ export default async function handler(req, res) {
       (tokenBudget?.ragMax ?? 0) +
       (tokenBudget?.replyMax ?? 0);
 
-    // Bruk historikk fra body.messages hvis det finnes
-    const historyMessages = Array.isArray(body?.messages)
-      ? body.messages.slice(0, -1)
-      : [];
-
     const promptPack = buildPrompt({
       persona,
       userPrompt,
       contextChunks,
-      history: historyMessages,
+      history: [],
     });
 
     const guard = tokenGuard({
       systemPrompt: promptPack.messages[0]?.content || "",
       userPrompt,
       contextChunks,
-      historyMessages: historyMessages.map((m) => m.content),
+      historyMessages: [],
       maxTokens,
       replyMax: persona?.tokenBudget?.replyMax ?? 1200,
       model: promptPack.model,
