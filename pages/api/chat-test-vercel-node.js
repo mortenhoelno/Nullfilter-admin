@@ -1,16 +1,16 @@
-// ❌ Ingen export config -> kjører på Vercel sin Node serverless runtime
-
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     res.status(405).send("Method not allowed");
     return;
   }
 
-  const body = await req.body
-    ? JSON.parse(req.body)
-    : { q: "Hei, skriv en kort historie om en katt på månen." };
-
-  const userPrompt = body?.q || "Hei, skriv en kort historie om en katt på månen.";
+  // Les body manuelt (Node-runtime i Vercel)
+  let body = "";
+  for await (const chunk of req) {
+    body += chunk;
+  }
+  const data = body ? JSON.parse(body) : {};
+  const userPrompt = data?.q || "Hei, skriv en kort historie om en katt på månen.";
 
   const messages = [
     { role: "system", content: "Du er en hjelpsom test-bot." },
@@ -36,15 +36,15 @@ export default async function handler(req, res) {
   });
 
   if (!resp.ok || !resp.body) {
-    res.write(`event: error\ndata: ${JSON.stringify({ error: await resp.text() })}\n\n`);
+    res.write(
+      `event: error\ndata: ${JSON.stringify({ error: await resp.text() })}\n\n`
+    );
     res.end();
     return;
   }
 
   const reader = resp.body.getReader();
   const decoder = new TextDecoder();
-
-  let buffer = "";
 
   while (true) {
     const { done, value } = await reader.read();
@@ -65,7 +65,6 @@ export default async function handler(req, res) {
         const json = JSON.parse(payload);
         const delta = json?.choices?.[0]?.delta?.content || "";
         if (delta) {
-          buffer += delta;
           res.write(`data: ${JSON.stringify({ text: delta })}\n\n`);
         }
       } catch (err) {
