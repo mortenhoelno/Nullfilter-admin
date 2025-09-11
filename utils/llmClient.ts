@@ -81,11 +81,14 @@ export async function chatCompletion({
 }: ChatCallInput): Promise<ChatCallResult> {
   const apiMessages = toApiMessages(messages);
 
+  // 👇 Lag payload uten temperature for gpt-5-mini
+  const basePayload: any = { model, messages: apiMessages, stream: false };
+  if (!model.startsWith("gpt-5-mini")) {
+    basePayload.temperature = temperature;
+  }
+
   try {
-    const res = await openai.chat.completions.create(
-      { model, messages: apiMessages, temperature, stream: false },
-      { signal }
-    );
+    const res = await openai.chat.completions.create(basePayload, { signal });
     const reply = res.choices?.[0]?.message?.content ?? "";
     return {
       ok: true,
@@ -102,15 +105,15 @@ export async function chatCompletion({
   } catch (err: any) {
     if (enableFallback && fallbackModel && fallbackModel !== model) {
       try {
-        const res2 = await openai.chat.completions.create(
-          {
-            model: fallbackModel,
-            messages: apiMessages,
-            temperature,
-            stream: false,
-          },
-          { signal }
-        );
+        const fbPayload: any = {
+          model: fallbackModel,
+          messages: apiMessages,
+          stream: false,
+        };
+        if (!fallbackModel.startsWith("gpt-5-mini")) {
+          fbPayload.temperature = temperature;
+        }
+        const res2 = await openai.chat.completions.create(fbPayload, { signal });
         const reply2 = res2.choices?.[0]?.message?.content ?? "";
         return {
           ok: true,
@@ -156,12 +159,15 @@ export function streamFetchChat({
 }) {
   const apiMessages = toApiMessages(messages);
 
-  const body = JSON.stringify({
+  const payload: any = {
     model,
     stream: true,
     messages: apiMessages,
-    temperature,
-  });
+  };
+
+  if (!model.startsWith("gpt-5-mini")) {
+    payload.temperature = temperature;
+  }
 
   return fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -169,7 +175,7 @@ export function streamFetchChat({
       Authorization: `Bearer ${process.env.OPENAI_API_KEY || ""}`,
       "Content-Type": "application/json",
     },
-    body,
+    body: JSON.stringify(payload),
     signal,
   });
 }
