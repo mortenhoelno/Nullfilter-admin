@@ -1,87 +1,94 @@
-import { useState } from "react";
+export const config = {
+  runtime: "edge", // 👈 Viktig for å slippe buffering hos Vercel
+};
 
-export default function ChatEngineTest() {
-  const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState("");
-
-  async function sendMessage() {
-    if (!input.trim()) return;
-
-    const userMsg = { role: "user", content: input };
-    setMessages((msgs) => [...msgs, userMsg]);
-
-    setInput("");
-
-    console.time("⏱️ First token to screen"); // start måling
-
-    const resp = await fetch("/api/chat-test-sse", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ q: input }),
-    });
-
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let gotFirstToken = false;
-
-    // legg inn en tom assistant-melding for å fylle på underveis
-    setMessages((msgs) => [...msgs, { role: "assistant", content: "" }]);
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
-      const parts = buffer.split("\n\n");
-      buffer = parts.pop();
-
-      for (const part of parts) {
-        if (part.startsWith("data:")) {
-          try {
-            const json = JSON.parse(part.slice(5));
-            if (json.text) {
-              if (!gotFirstToken) {
-                gotFirstToken = true;
-                console.timeEnd("⏱️ First token to screen"); // stopp måling
-              }
-              setMessages((msgs) => {
-                const copy = [...msgs];
-                copy[copy.length - 1].content += json.text;
-                return copy;
-              });
-            }
-          } catch {}
-        }
-      }
-    }
+export default async function handler(req) {
+  if (req.method !== "POST") {
+    return new Response("Method not allowed", { status: 405 });
   }
 
-  return (
-    <div className="flex flex-col h-full">
-      <div className="flex-1 overflow-y-auto p-4 space-y-2">
-        {messages.map((m, i) => (
-          <div
-            key={i}
-            className={`p-2 rounded ${
-              m.role === "user" ? "bg-blue-200 self-end" : "bg-gray-200 self-start"
-            }`}
-          >
-            {m.content}
-          </div>
-        ))}
-      </div>
-      <div className="p-4 flex gap-2 border-t">
-        <input
-          className="flex-1 border p-2"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Skriv til Testbot..."
-        />
-        <button className="bg-blue-500 text-white px-4 py-2" onClick={sendMessage}>
-          Send
-        </button>
-      </div>
-    </div>
-  );
+  const body = await req.json();
+  const userPrompt = body?.q || "";
+
+  // Bygg et minimalt prompt (her kan du utvide med buildPrompt/persona senere)
+  const messages = [
+    { role: "system", content: "Du er en hjelpsom test-bot." },
+    { role: "user", content: userPrompt },
+  ];
+
+  // Kall OpenAI med streaming
+  const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "gpt-5-mini-2025-08-07", // 👈 samme modell som NullFilter
+      stream: true,
+      messages,
+    }),
+  });
+
+  if (!resp.ok || !resp.body) {
+    return new Response(
+      `OpenAI error: ${resp.status} ${await resp.text()}`,
+      { status: 500 }
+    );
+  }
+
+  // Pipe OpenAI sin stream direkte til klienten
+  const stream = new ReadableStream({
+    async start(controller) {
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+
+      let gotFirstToken = false;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split(/\r?\n/);
+
+        for (const line of lines) {
+          if (!line.startsWith("data:")) continue;
+          const payload = line.slice(5).trim();
+          if (payload === "[DONE]") {
+            controller.enqueue(
+              new TextEncoder().encode(`event: end\ndata: {}\n\n`)
+            );
+            controller.close();
+            return;
+          }
+          try {
+            const json = JSON.parse(payload);
+            const delta = json?.choices?.[0]?.delta?.content || "";
+            if (delta) {
+              if (!gotFirstToken) {
+                gotFirstToken = true;
+                console.log("→ First token sent to client at:", Date.now());
+              }
+              controller.enqueue(
+                new TextEncoder().encode(
+                  `data: ${JSON.stringify({ text: delta })}\n\n`
+                )
+              );
+            }
+          } catch {
+            // ignorér parsefeil
+          }
+        }
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+    },
+  });
 }
