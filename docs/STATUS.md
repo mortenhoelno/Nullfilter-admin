@@ -106,7 +106,7 @@
 - **pinnedDocId** → dokumentchunks som alltid inkluderes
 - **response_ms** → målt svartid per melding
 
-###🔎 Prompt-struktur med global pinned dokument
+### 🔎 Prompt-struktur med global pinned dokument
 
 Når en bot (f.eks. NullFilter eller Keepertrening) bygger systemprompten, ser rekkefølgen slik ut:
 
