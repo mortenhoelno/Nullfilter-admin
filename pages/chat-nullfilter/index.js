@@ -60,8 +60,7 @@ export default function NullfilterChat() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           botId: "nullfilter",
-          message: toSend,
-          history: messages,
+          messages: [...messages, newMessage], // 🔄 riktig format til API
         }),
       });
 
