@@ -28,8 +28,12 @@ export default async function handler(req, res) {
     Connection: "keep-alive",
   });
 
+  // Debug: handler startet
   const t_request = Date.now();
-  res.write(`event: debug\ndata: ${JSON.stringify({ t_request })}\n\n`);
+  res.write(`event: debug\ndata: ${JSON.stringify({ step: "handler_started", t_request })}\n\n`);
+
+  // Debug: før vi sender til OpenAI
+  res.write(`event: debug\ndata: ${JSON.stringify({ step: "fetch_sent", t: Date.now() })}\n\n`);
 
   const resp = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -38,8 +42,9 @@ export default async function handler(req, res) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "gpt-4o-mini", // 👈 tester denne modellen
+      model: "gpt-4o-mini", // 🚀 bruker 4o-mini
       stream: true,
+      temperature: 0.7, // 👈 lagt til
       messages: [
         { role: "system", content: "Du er en hjelpsom test-bot." },
         { role: "user", content: userPrompt },
@@ -78,21 +83,21 @@ export default async function handler(req, res) {
             const t_first = Date.now();
             res.write(
               `event: debug\ndata: ${JSON.stringify({
+                step: "first_token",
                 t_first,
                 elapsed_ms: t_first - t_request,
-                step: "first_token",
               })}\n\n`
             );
           }
           res.write(`data: ${JSON.stringify({ text: delta })}\n\n`);
         }
       } catch {
-        // Ignorer uferdige JSON-linjer
+        // Ignorer ufullstendige linjer
       }
     }
   }
 
-  // Fallback: sørg for at vi avslutter alltid
+  // Fallback avslutning
   res.write(`event: end\ndata: {"forced":true}\n\n`);
   res.end();
 }
