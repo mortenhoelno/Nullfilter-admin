@@ -11,7 +11,7 @@ export default async function handler(req, res) {
 
   const body = req.body || {};
   const userPrompt = body?.q || "";
-  const persona = personaConfig["nullfilter"]; // 👈 bruk NullFilter-config som basis
+  const persona = personaConfig["nullfilter"]; // 👈 arver config fra NullFilter
 
   const promptPack = buildPrompt({
     persona,
@@ -20,10 +20,12 @@ export default async function handler(req, res) {
     history: [],
   });
 
+  // --- Viktig: riktige SSE-headere + chunked ---
   res.writeHead(200, {
-    "Content-Type": "text/event-stream",
+    "Content-Type": "text/event-stream; charset=utf-8",
     "Cache-Control": "no-cache, no-transform",
     Connection: "keep-alive",
+    "Transfer-Encoding": "chunked",
   });
 
   const resp = await streamFetchChat({
@@ -33,6 +35,7 @@ export default async function handler(req, res) {
 
   if (!resp.ok || !resp.body) {
     res.write(`data: ${JSON.stringify({ error: "LLM stream feilet" })}\n\n`);
+    res.flush?.();
     res.end();
     return;
   }
@@ -51,6 +54,7 @@ export default async function handler(req, res) {
       const payload = line.slice(5).trim();
       if (payload === "[DONE]") {
         res.write(`event: end\ndata: {}\n\n`);
+        res.flush?.();
         res.end();
         return;
       }
@@ -59,8 +63,11 @@ export default async function handler(req, res) {
         const delta = json?.choices?.[0]?.delta?.content || "";
         if (delta) {
           res.write(`data: ${JSON.stringify({ text: delta })}\n\n`);
+          res.flush?.(); // 👈 tving flush til klienten
         }
-      } catch {}
+      } catch {
+        // ignorér
+      }
     }
   }
 }
