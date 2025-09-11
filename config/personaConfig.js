@@ -8,8 +8,8 @@ const personaConfig = {
     name: "Nullfilter",
 
     // 📌 Modellvalg
-    model: "gpt-4o-mini",
-    fallbackModel: "gpt-4o",
+    model: "gpt-5-mini",
+    fallbackModel: "gpt-4o-mini",
 
     // 🌡️ Temperatur (kreativitet)
     temperature: 0.2,
@@ -54,8 +54,8 @@ Du har tilgang til relevante tekster og strategier som skal brukes som svargrunn
     name: "Keepertrening",
 
     // 📌 Modellvalg (samme som Nullfilter nå)
-    model: "gpt-4o-mini",
-    fallbackModel: "gpt-4o",
+    model: "gpt-5-mini",
+    fallbackModel: "gpt-4o-mini",
 
     // 🌡️ Temperatur
     temperature: 0.2,
