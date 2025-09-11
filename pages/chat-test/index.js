@@ -13,6 +13,7 @@ export default function ChatTestPage() {
   );
 }
 
+// 👇 Dette trengs for å unngå build-feilen
 export async function getServerSideProps() {
   return { props: {} };
 }
