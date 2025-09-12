@@ -4,17 +4,16 @@ import OpenAI from "openai";
 
 export const config = { runtime: "nodejs" };
 
-// ⚠️ NYTT: Initialiserer OpenAI-klienten
+// ⚠️ Initialiser OpenAI-klienten
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// ⚠️ NYTT: Konfigurerer bot ID og Assistant ID.
-// I en ekte app ville dette hentes fra en database eller config-fil.
+// ⚠️ Konfigurer Assistant ID per bot
 const assistantConfig = {
-    nullfilter: {
-        assistantId: "asst_qtIurjQdsMuqECP8tO64TfZm",
-    },
+  nullfilter: {
+    assistantId: "asst_qtIurjQdsMuqECP8tO64TfZm",
+  },
 };
 
 export default async function handler(req, res) {
@@ -37,7 +36,7 @@ export default async function handler(req, res) {
     const body = req.body || {};
     const messages = body.messages || [];
     const botId = body?.botId || "nullfilter";
-    const conversationId = body.conversationId; // Henter conversationId fra frontend
+    const conversationId = body.conversationId; // fra frontend
 
     const assistantId = assistantConfig[botId]?.assistantId;
     if (!assistantId) {
@@ -46,54 +45,68 @@ export default async function handler(req, res) {
 
     // 🔄 Håndter samtalehistorikk med Threads
     let threadId = conversationId;
-    
-    // Hvis ingen threadId sendes, opprett en ny tråd.
+
     if (!threadId) {
-      const thread = await openai.beta.threads.create();
-      threadId = thread.id;
+      const { id } = await openai.beta.threads.create();
+      threadId = id;
     }
 
-    // Finn den siste meldingen fra brukeren
+    // Finn siste melding fra brukeren
     const userMessage = messages[messages.length - 1];
-    if (!userMessage || userMessage.role !== 'user' || !userMessage.content.trim()) {
-        return res.status(400).json({ error: "Mangler gyldig brukerprompt" });
+    if (!userMessage || userMessage.role !== "user" || !userMessage.content.trim()) {
+      return res.status(400).json({ error: "Mangler gyldig brukerprompt" });
     }
 
     // 🔄 Legg brukerens melding til tråden
     await openai.beta.threads.messages.create(threadId, {
-      role: 'user',
+      role: "user",
       content: userMessage.content,
     });
-    
+
     mark("llm_req_start");
-    
-    // 🔄 Kjør Assistant-en og vent på svar
+
+    // 🔄 Start kjøring
     const run = await openai.beta.threads.runs.create(threadId, {
       assistant_id: assistantId,
     });
 
-    // Polling-løkke for å vente på at kjøringen fullføres
+    // Polling med timeout
+    const timeoutMs = 20000; // 20 sek maks
+    const pollInterval = 500;
+    let waited = 0;
+
     let runStatus = await openai.beta.threads.runs.retrieve(threadId, run.id);
-    while (runStatus.status !== 'completed') {
-      await new Promise(resolve => setTimeout(resolve, 500));
+
+    while (runStatus.status !== "completed") {
+      if (runStatus.status === "failed" || runStatus.status === "cancelled") {
+        throw new Error(`Run feilet med status: ${runStatus.status}`);
+      }
+      if (waited > timeoutMs) {
+        throw new Error("Run timed out etter 20s");
+      }
+      await new Promise((resolve) => setTimeout(resolve, pollInterval));
+      waited += pollInterval;
       runStatus = await openai.beta.threads.runs.retrieve(threadId, run.id);
     }
-    
-    // 🔄 Hent de siste meldingene og finn svaret fra assistenten
+
+    // 🔄 Hent siste meldinger
     const threadMessages = await openai.beta.threads.messages.list(threadId, { limit: 1 });
     const lastAssistantMessage = threadMessages.data[0];
-    const reply = lastAssistantMessage.content[0].text.value;
+
+    const reply = lastAssistantMessage?.content
+      ?.map((c) => c.text?.value || "")
+      .join("\n")
+      .trim() || "(Ingen svar)";
 
     mark("llm_stream_ended");
     measure("llm_stream_ended", "llm_req_start");
-    
-    // Returner svaret og threadId til frontend
+
+    // ✅ Returner svaret og threadId
     return res.status(200).json({
-      reply: reply,
+      reply,
       conversationId: threadId,
-      // Du kan legge til perf-målinger her om du vil
+      perf: stepLog,
     });
-    
   } catch (err) {
     console.error("chat error", err);
     return res.status(500).json({ error: String(err?.message || err) });
