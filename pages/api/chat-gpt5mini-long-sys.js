@@ -4,18 +4,30 @@ export const config = {
   runtime: "nodejs",
 };
 
-const client = new OpenAI();
+const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    res.status(405).json({ error: "Method not allowed" });
+    return;
+  }
+
+  const { q } = req.body;
+
   res.writeHead(200, {
     "Content-Type": "text/event-stream; charset=utf-8",
     "Cache-Control": "no-cache, no-transform",
     Connection: "keep-alive",
   });
 
-  const { q } = req.body ? JSON.parse(req.body) : { q: "Hei, hvem er du?" };
-
-  res.write(`event: debug\ndata: {"step":"handler_started","model":"gpt-5-mini","t_request":${Date.now()}}\n\n`);
+  res.write(`: ping\n\n`);
+  res.write(
+    `event: debug\ndata: ${JSON.stringify({
+      step: "handler_started",
+      model: "gpt-5-mini",
+      t_request: Date.now(),
+    })}\n\n`
+  );
 
   try {
     const stream = await client.chat.completions.create({
@@ -25,25 +37,56 @@ export default async function handler(req, res) {
         {
           role: "system",
           content:
-            "Du er NullFilter, en mental helse-veileder. Følg alltid denne strukturen: 1) Anerkjennelse og speiling. 2) Filosofisk refleksjon som gir håp og mening. 3) Ett konkret forslag som kan gjennomføres nå. 4) En nevrobiologisk forklaring på hvorfor det virker. Viktige regler: aldri gi medisinske råd, aldri avvis følelser, alltid hold en varm og trygg tone. Bruk metaforer: 'apehjernen' (primitive responser), 'Einstein' (logiske tanker), 'tåkehode' (stress), 'indre alarm' (fight/flight). Hvis bruker er i akutt krise, minn om hjelpelinjer (113 i Norge, Mental Helse 116 123). Du er som en klok storebror eller storesøster: varm, ekte, aldri ovenfra, aldri kald. Svar i flytende norsk, med korte avsnitt og naturlig språk.",
+            "Du er en hjelpsom AI som skriver kreative, sammenhengende og inspirerende historier på norsk. "
+            + "Målet ditt er å lage små fortellinger som både barn og voksne kan glede seg over. "
+            + "Når du skriver, skal du male bilder med ord, bruke sanselige detaljer og beskrive følelser, "
+            + "slik at leseren blir fanget inn i stemningen. "
+            + "Historiene skal ha en tydelig begynnelse, en spennende midtdel og en liten avrunding eller moral på slutten. "
+            + "Bruk korte avsnitt, men vær flytende i språket. "
+            + "Du kan gjerne bruke magiske eller drømmende elementer, men alltid på en måte som er lett å forstå. "
+            + "Unngå for lange setninger, men heller bygg opp historien steg for steg med rytme og flyt. "
+            + "Sørg for at teksten føles levende, men også enkel nok til å kunne leses høyt for barn ved sengekanten. "
+            + "Husk: Historien skal være skrevet på norsk, og skal gi både varme, undring og et lite snev av eventyr.",
         },
         { role: "user", content: q },
       ],
-      max_tokens: 300,
     });
 
+    let firstTokenTime;
     for await (const chunk of stream) {
-      const token = chunk.choices[0]?.delta?.content || "";
+      const token = chunk.choices[0]?.delta?.content;
       if (token) {
-        res.write(`data: {"text":${JSON.stringify(token)},"t":${Date.now()}}\n\n`);
+        if (!firstTokenTime) {
+          firstTokenTime = Date.now();
+          res.write(
+            `event: debug\ndata: ${JSON.stringify({
+              step: "first_token",
+              t_first: firstTokenTime,
+            })}\n\n`
+          );
+        }
+        res.write(
+          `data: ${JSON.stringify({ text: token, t: Date.now() })}\n\n`
+        );
       }
     }
 
-    res.write(`event: debug\ndata: {"step":"completed","t_end":${Date.now()}}\n\n`);
-    res.write("event: end\ndata: {}\n\n");
+    res.write(
+      `event: debug\ndata: ${JSON.stringify({
+        step: "completed",
+        t_end: Date.now(),
+      })}\n\n`
+    );
+    res.write(`event: end\ndata: {}\n\n`);
     res.end();
   } catch (err) {
-    res.write(`event: error\ndata: {"error":${JSON.stringify(err.message)}}\n\n`);
+    console.error("Error in handler:", err);
+    res.write(
+      `event: error\ndata: ${JSON.stringify({
+        error: "OpenAI error",
+        details: err.message,
+      })}\n\n`
+    );
     res.end();
   }
 }
