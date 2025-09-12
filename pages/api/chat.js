@@ -48,9 +48,9 @@ export default async function handler(req, res) {
 
     if (!threadId) {
       const thread = await openai.beta.threads.create();
-      console.log("THREAD CREATE RESPONSE:", JSON.stringify(thread, null, 2)); // 👀 DEBUG
+      console.log("THREAD CREATE RESPONSE:", JSON.stringify(thread, null, 2));
       threadId = thread.id || thread?.data?.id;
-      console.log("VALGT threadId:", threadId); // 👀 DEBUG
+      console.log("VALGT threadId:", threadId);
     }
 
     // Finn siste melding fra brukeren
@@ -72,14 +72,15 @@ export default async function handler(req, res) {
       assistant_id: assistantId,
     });
 
-    console.log("RUN CREATE RESPONSE:", JSON.stringify(run, null, 2)); // 👀 DEBUG
+    console.log("RUN CREATE RESPONSE:", JSON.stringify(run, null, 2));
 
     // Polling med timeout
     const timeoutMs = 20000; // 20 sek maks
     const pollInterval = 500;
     let waited = 0;
 
-    let runStatus = await openai.beta.threads.runs.retrieve(threadId, run.id);
+    // ✅ Korrigert rekkefølge: run.id først, deretter threadId
+    let runStatus = await openai.beta.threads.runs.retrieve(run.id, threadId);
 
     while (runStatus.status !== "completed") {
       if (runStatus.status === "failed" || runStatus.status === "cancelled") {
@@ -90,7 +91,8 @@ export default async function handler(req, res) {
       }
       await new Promise((resolve) => setTimeout(resolve, pollInterval));
       waited += pollInterval;
-      runStatus = await openai.beta.threads.runs.retrieve(threadId, run.id);
+
+      runStatus = await openai.beta.threads.runs.retrieve(run.id, threadId);
     }
 
     // 🔄 Hent siste meldinger
