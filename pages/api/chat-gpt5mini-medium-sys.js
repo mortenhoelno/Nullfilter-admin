@@ -4,7 +4,7 @@ export const config = {
   runtime: "nodejs",
 };
 
-const client = new OpenAI();
+const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -12,29 +12,21 @@ export default async function handler(req, res) {
     return;
   }
 
+  const { q } = req.body;
+
   res.writeHead(200, {
     "Content-Type": "text/event-stream; charset=utf-8",
     "Cache-Control": "no-cache, no-transform",
     Connection: "keep-alive",
   });
 
-  // Manuell parsing av body i Node runtime
-  let body = "";
-  await new Promise((resolve) => {
-    req.on("data", (chunk) => (body += chunk.toString()));
-    req.on("end", resolve);
-  });
-
-  let q = "Hei, hvem er du?";
-  try {
-    const parsed = JSON.parse(body);
-    if (parsed.q) q = parsed.q;
-  } catch (err) {
-    // Ignorer feil og bruk default q
-  }
-
+  res.write(`: ping\n\n`);
   res.write(
-    `event: debug\ndata: {"step":"handler_started","model":"gpt-5-mini","t_request":${Date.now()}}\n\n`
+    `event: debug\ndata: ${JSON.stringify({
+      step: "handler_started",
+      model: "gpt-5-mini",
+      t_request: Date.now(),
+    })}\n\n`
   );
 
   try {
@@ -45,30 +37,47 @@ export default async function handler(req, res) {
         {
           role: "system",
           content:
-            "Du er NullFilter, en mental helse-veileder. Du svarer alltid med: 1) anerkjennelse, 2) filosofisk refleksjon, 3) ett konkret forslag, 4) nevrobiologisk forklaring. Bruk metaforer som 'apehjernen', 'indre alarm', 'tåkehode'. Vær varm og ekte, aldri ovenfra.",
+            "Du er en hjelpsom AI som skriver korte og fengende historier. Svar på norsk. Vær kreativ, men hold historien enkel, slik at både barn og voksne kan forstå den.",
         },
         { role: "user", content: q },
       ],
-      max_tokens: 300,
     });
 
+    let firstTokenTime;
     for await (const chunk of stream) {
-      const token = chunk.choices[0]?.delta?.content || "";
+      const token = chunk.choices[0]?.delta?.content;
       if (token) {
+        if (!firstTokenTime) {
+          firstTokenTime = Date.now();
+          res.write(
+            `event: debug\ndata: ${JSON.stringify({
+              step: "first_token",
+              t_first: firstTokenTime,
+              elapsed_ms: firstTokenTime - Number(res.req.t_request || Date.now()),
+            })}\n\n`
+          );
+        }
         res.write(
-          `data: {"text":${JSON.stringify(token)},"t":${Date.now()}}\n\n`
+          `data: ${JSON.stringify({ text: token, t: Date.now() })}\n\n`
         );
       }
     }
 
     res.write(
-      `event: debug\ndata: {"step":"completed","t_end":${Date.now()}}\n\n`
+      `event: debug\ndata: ${JSON.stringify({
+        step: "completed",
+        t_end: Date.now(),
+      })}\n\n`
     );
-    res.write("event: end\ndata: {}\n\n");
+    res.write(`event: end\ndata: {}\n\n`);
     res.end();
   } catch (err) {
+    console.error("Error in handler:", err);
     res.write(
-      `event: error\ndata: {"error":${JSON.stringify(err.message)}}\n\n`
+      `event: error\ndata: ${JSON.stringify({
+        error: "OpenAI error",
+        details: err.message,
+      })}\n\n`
     );
     res.end();
   }
