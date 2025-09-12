@@ -9,7 +9,6 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Bruker Nullfilter sin Prompt ID
 const botConfig = {
   nullfilter: {
     promptId: "pmpt_68c3eefbcc6881968424629195623d45008a7b1e813c26e2",
@@ -39,7 +38,7 @@ export default async function handler(req, res) {
     }
 
     // 🔄 Setup SSE
-    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
     res.flushHeaders();
@@ -55,15 +54,16 @@ export default async function handler(req, res) {
 
     for await (const event of stream) {
       if (event.type === "response.output_text.delta") {
-        res.write(`data: ${event.delta}\n\n`);
+        // Send JSON, slik at mellomrom/linjeskift ikke forsvinner
+        res.write(`data: ${JSON.stringify({ delta: event.delta })}\n\n`);
       } else if (event.type === "response.completed") {
-        res.write("data: [DONE]\n\n");
+        res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
         res.end();
       }
     }
   } catch (err) {
     console.error("chat-stream error", err);
-    res.write(`data: [ERROR] ${String(err?.message || err)}\n\n`);
+    res.write(`data: ${JSON.stringify({ error: String(err?.message || err) })}\n\n`);
     res.end();
   }
 }
