@@ -1,5 +1,5 @@
 // FERDIG VERSJON: pages/chat-nullfilter/index.js
-// Nullfilter-chat med responstid-logging + starter-fallback + ekte API-kall (nå med streaming)
+// Nullfilter-chat med streaming fra /api/chat-stream (SSE)
 
 import { useState, useEffect } from "react";
 import {
@@ -9,8 +9,6 @@ import {
 } from "../../utils/storage";
 import ChatEngine from "../../components/ChatEngine";
 import personaConfig from "../../config/personaConfig";
-/** @typedef {import('../../types').Message} Message */
-/** @typedef {import('../../types').Conversation} Conversation */
 
 const config = personaConfig.nullfilter;
 
@@ -43,8 +41,8 @@ export default function NullfilterChat() {
     loadConversation();
   }, [useMemory, email]);
 
-  // 🚀 Send melding – nå med streaming
-  const sendMessage = async (text, perfCallbacks = {}) => {
+  // 🚀 Send melding med streaming fra /api/chat-stream
+  const sendMessage = async (text) => {
     const toSend = (text ?? chatInput).trim();
     if (!toSend) return;
 
@@ -54,10 +52,9 @@ export default function NullfilterChat() {
     if (conversation) await saveMessage(conversation.id, newMessage);
 
     try {
-      perfCallbacks.onRequestStart?.();
       setIsLoading(true);
 
-      const res = await fetch("/api/chat", {
+      const res = await fetch("/api/chat-stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -66,14 +63,12 @@ export default function NullfilterChat() {
         }),
       });
 
-      if (!res.body) {
-        throw new Error("Mangler respons-body fra API");
-      }
+      if (!res.body) throw new Error("Mangler stream-body fra API");
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder("utf-8");
 
-      // Start ny assistentmelding
+      // Start ny melding fra assistenten
       let assistantMessage = { role: "assistant", content: "" };
       setMessages((prev) => [...prev, assistantMessage]);
 
@@ -85,33 +80,30 @@ export default function NullfilterChat() {
         const lines = chunk.split("\n").filter((line) => line.startsWith("data:"));
 
         for (let line of lines) {
-          const data = line.replace(/^data:\s*/, "");
+          try {
+            const data = JSON.parse(line.replace(/^data:\s*/, ""));
 
-          if (data === "[DONE]") {
-            setIsLoading(false);
-            const perfResult = perfCallbacks.onDone?.({});
-            if (conversation) {
-              await saveMessage(conversation.id, {
-                ...assistantMessage,
-                response_ms: perfResult ?? null,
+            if (data.delta) {
+              assistantMessage.content += data.delta;
+              setMessages((prev) => {
+                const updated = [...prev];
+                updated[updated.length - 1] = { ...assistantMessage };
+                return updated;
               });
+            } else if (data.done) {
+              setIsLoading(false);
+              if (conversation) {
+                await saveMessage(conversation.id, assistantMessage);
+              }
+              return;
+            } else if (data.error) {
+              console.error("Stream error:", data.error);
+              setIsLoading(false);
+              return;
             }
-            return;
+          } catch (e) {
+            console.error("Parse error:", e, line);
           }
-
-          if (data.startsWith("[ERROR]")) {
-            console.error("Stream error:", data);
-            setIsLoading(false);
-            return;
-          }
-
-          // Bygg opp svaret underveis
-          assistantMessage.content += data;
-          setMessages((prev) => {
-            const updated = [...prev];
-            updated[updated.length - 1] = { ...assistantMessage };
-            return updated;
-          });
         }
       }
     } catch (err) {
