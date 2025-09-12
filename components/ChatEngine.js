@@ -1,4 +1,4 @@
-// components/ChatEngine.js — OPPDATERT for riktig whitespace + typing-anim
+// components/ChatEngine.js — FIX for spacing + boble overflow
 
 import { useRef, useEffect, useState } from "react";
 import { createClientPerf } from "../utils/clientPerf";
@@ -83,6 +83,14 @@ export default function ChatEngine({
   };
   const theme = colorMap[themeColor] || colorMap.blue;
 
+  // --- FIX: mellomrom når vi streamer tekst ---
+  const safeAppend = (prev, next) => {
+    if (!prev) return next;
+    const needsSpace =
+      !prev.endsWith(" ") && !next.startsWith(" ") && /[a-zA-Z0-9]/.test(prev.slice(-1));
+    return prev + (needsSpace ? " " : "") + next;
+  };
+
   const handleSend = (text) => {
     if (loading) return;
     perfRef.current = createClientPerf("chat");
@@ -94,6 +102,21 @@ export default function ChatEngine({
         const result = perfRef.current?.onDone(extra);
         console.log("⏱️ Ferdig response_ms:", result?.response_ms);
         return result?.response_ms;
+      },
+      onDelta: (delta) => {
+        // brukes hvis du streamer inn tekst
+        setMessages((prev) => {
+          const last = prev[prev.length - 1];
+          if (last?.role === "assistant") {
+            const updated = {
+              ...last,
+              content: safeAppend(last.content, delta),
+            };
+            return [...prev.slice(0, -1), updated];
+          } else {
+            return [...prev, { role: "assistant", content: delta }];
+          }
+        });
       },
     });
   };
@@ -122,7 +145,7 @@ export default function ChatEngine({
             className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
           >
             <div
-              className={`px-3 py-2 rounded-2xl text-sm shadow max-w-[85%] whitespace-pre-wrap break-words ${
+              className={`px-3 py-2 rounded-2xl text-sm shadow max-w-[85%] overflow-hidden whitespace-pre-wrap break-words ${
                 m.role === "user" ? theme.user : theme.bot
               }`}
             >
