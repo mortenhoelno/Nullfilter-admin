@@ -1,4 +1,4 @@
-// components/ChatEngine.js — FIX for spacing + boble overflow
+// components/ChatEngine.js — FIX for spacing + avsnitt + leselighet
 
 import { useRef, useEffect, useState } from "react";
 import { createClientPerf } from "../utils/clientPerf";
@@ -149,7 +149,19 @@ export default function ChatEngine({
                 m.role === "user" ? theme.user : theme.bot
               }`}
             >
-              {m.content}
+              {/* 👇 Gjør om \n\n til avsnitt og \n til <br /> */}
+              {m.content
+                .split(/\n\n+/)
+                .map((para, idx) => (
+                  <p key={idx} className="mb-2">
+                    {para.split(/\n/).map((line, lineIdx) => (
+                      <span key={lineIdx}>
+                        {line}
+                        <br />
+                      </span>
+                    ))}
+                  </p>
+                ))}
             </div>
           </div>
         ))}
