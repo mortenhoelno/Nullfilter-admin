@@ -7,15 +7,35 @@ export const config = {
 const client = new OpenAI();
 
 export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    res.status(405).json({ error: "Method not allowed" });
+    return;
+  }
+
   res.writeHead(200, {
     "Content-Type": "text/event-stream; charset=utf-8",
     "Cache-Control": "no-cache, no-transform",
     Connection: "keep-alive",
   });
 
-  const { q } = req.body ? JSON.parse(req.body) : { q: "Hei, hvem er du?" };
+  // Manuell parsing av body i Node runtime
+  let body = "";
+  await new Promise((resolve) => {
+    req.on("data", (chunk) => (body += chunk.toString()));
+    req.on("end", resolve);
+  });
 
-  res.write(`event: debug\ndata: {"step":"handler_started","model":"gpt-5-mini","t_request":${Date.now()}}\n\n`);
+  let q = "Hei, hvem er du?";
+  try {
+    const parsed = JSON.parse(body);
+    if (parsed.q) q = parsed.q;
+  } catch (err) {
+    // Ignorer feil og bruk default q
+  }
+
+  res.write(
+    `event: debug\ndata: {"step":"handler_started","model":"gpt-5-mini","t_request":${Date.now()}}\n\n`
+  );
 
   try {
     const stream = await client.chat.completions.create({
@@ -35,15 +55,21 @@ export default async function handler(req, res) {
     for await (const chunk of stream) {
       const token = chunk.choices[0]?.delta?.content || "";
       if (token) {
-        res.write(`data: {"text":${JSON.stringify(token)},"t":${Date.now()}}\n\n`);
+        res.write(
+          `data: {"text":${JSON.stringify(token)},"t":${Date.now()}}\n\n`
+        );
       }
     }
 
-    res.write(`event: debug\ndata: {"step":"completed","t_end":${Date.now()}}\n\n`);
+    res.write(
+      `event: debug\ndata: {"step":"completed","t_end":${Date.now()}}\n\n`
+    );
     res.write("event: end\ndata: {}\n\n");
     res.end();
   } catch (err) {
-    res.write(`event: error\ndata: {"error":${JSON.stringify(err.message)}}\n\n`);
+    res.write(
+      `event: error\ndata: {"error":${JSON.stringify(err.message)}}\n\n`
+    );
     res.end();
   }
 }
