@@ -8,12 +8,11 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Her kan du mappe botId → model / promptId hvis du vil ha flere bots
+// Konfigurasjon for bots
 const botConfig = {
   nullfilter: {
-    model: "gpt-4.1-mini",
-    // Hvis du har lagret et prompt i OpenAI console kan du bruke:
-    // prompt: { id: "pmpt_xxxxx", version: "1" }
+    promptId: "pmpt_68c3eefbcc6881968424629195623d45008a7b1e813c26e2",
+    version: "1",
   },
 };
 
@@ -43,7 +42,7 @@ export default async function handler(req, res) {
       throw new Error(`Ukjent bot ID: ${botId}`);
     }
 
-    // Ta siste melding fra bruker
+    // Finn siste melding fra bruker
     const userMessage = messages[messages.length - 1];
     if (!userMessage || userMessage.role !== "user" || !userMessage.content.trim()) {
       return res.status(400).json({ error: "Mangler gyldig brukerprompt" });
@@ -51,12 +50,14 @@ export default async function handler(req, res) {
 
     mark("llm_req_start");
 
-    // 🔄 Bruk Responses API
+    // 🔄 Kjør Responses API med Prompt ID
     const response = await openai.responses.create({
-      model: cfg.model,
+      prompt: {
+        id: cfg.promptId,
+        version: cfg.version,
+      },
       input: userMessage.content,
-      // Hvis du heller vil bruke lagret prompt:
-      // prompt: cfg.prompt
+      store: true, // lagrer hos OpenAI (kan brukes for historikk)
     });
 
     const reply =
