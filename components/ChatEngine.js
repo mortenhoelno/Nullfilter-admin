@@ -1,4 +1,4 @@
-// components/ChatEngine.js — OPPDATERT med clientPerf-integrasjon
+// components/ChatEngine.js — OPPDATERT for streaming + riktig whitespace
 
 import { useRef, useEffect, useState } from "react";
 import { createClientPerf } from "../utils/clientPerf"; // ⏱️ Importer perf-verktøy
@@ -107,16 +107,13 @@ export default function ChatEngine({
   // Wrapper for å koble perf → onSend
   const handleSend = (text) => {
     if (loading) return;
-    // start ny måling
     perfRef.current = createClientPerf("chat");
     perfRef.current.onSendClick();
 
-    // la parent håndtere selve sendingen
     onSend(text, {
       onRequestStart: () => perfRef.current?.onRequestStart(),
       onDone: (extra) => {
         const result = perfRef.current?.onDone(extra);
-        // result.response_ms er tallet vi skal lagre
         console.log("⏱️ Ferdig response_ms:", result?.response_ms);
         return result?.response_ms;
       },
@@ -147,7 +144,7 @@ export default function ChatEngine({
             className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
           >
             <div
-              className={`px-3 py-2 rounded-2xl text-sm shadow max-w-[85%] whitespace-pre-wrap ${
+              className={`px-3 py-2 rounded-2xl text-sm shadow max-w-[85%] whitespace-pre-wrap break-words ${
                 m.role === "user" ? theme.user : theme.bot
               }`}
             >
@@ -156,7 +153,7 @@ export default function ChatEngine({
           </div>
         ))}
 
-        {/* Ventemelding */}
+        {/* Ventemelding / typing-indikator */}
         <div className="min-h-[24px] flex items-center">
           {waitingMessage && (
             <div
