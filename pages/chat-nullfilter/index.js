@@ -1,5 +1,5 @@
 // FERDIG VERSJON: pages/chat-nullfilter/index.js
-// Nullfilter-chat med responstid-logging + starter-fallback + ekte API-kall
+// Nullfilter-chat med responstid-logging + starter-fallback + ekte API-kall (nå med streaming)
 
 import { useState, useEffect } from "react";
 import {
@@ -23,6 +23,7 @@ export default function NullfilterChat() {
   const [messages, setMessages] = useState([
     { role: "assistant", content: config.intro },
   ]);
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     const loadConversation = async () => {
@@ -42,7 +43,7 @@ export default function NullfilterChat() {
     loadConversation();
   }, [useMemory, email]);
 
-  // 🚀 Send melding – med responstid-logging og ekte API-kall
+  // 🚀 Send melding – nå med streaming
   const sendMessage = async (text, perfCallbacks = {}) => {
     const toSend = (text ?? chatInput).trim();
     if (!toSend) return;
@@ -54,37 +55,68 @@ export default function NullfilterChat() {
 
     try {
       perfCallbacks.onRequestStart?.();
+      setIsLoading(true);
 
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           botId: "nullfilter",
-          messages: [...messages, newMessage], // 🔄 riktig format til API
+          messages: [...messages, newMessage],
         }),
       });
 
-      if (!res.ok) {
-        throw new Error(`Chat API feilet: ${res.status}`);
+      if (!res.body) {
+        throw new Error("Mangler respons-body fra API");
       }
 
-      const data = await res.json();
-      const reply = {
-        role: "assistant",
-        content: data.reply || "(ingen respons)",
-      };
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder("utf-8");
 
-      setMessages((prev) => [...prev, reply]);
+      // Start ny assistentmelding
+      let assistantMessage = { role: "assistant", content: "" };
+      setMessages((prev) => [...prev, assistantMessage]);
 
-      const perfResult = perfCallbacks.onDone?.({});
-      if (conversation) {
-        await saveMessage(conversation.id, {
-          ...reply,
-          response_ms: perfResult ?? null,
-        });
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split("\n").filter((line) => line.startsWith("data:"));
+
+        for (let line of lines) {
+          const data = line.replace(/^data:\s*/, "");
+
+          if (data === "[DONE]") {
+            setIsLoading(false);
+            const perfResult = perfCallbacks.onDone?.({});
+            if (conversation) {
+              await saveMessage(conversation.id, {
+                ...assistantMessage,
+                response_ms: perfResult ?? null,
+              });
+            }
+            return;
+          }
+
+          if (data.startsWith("[ERROR]")) {
+            console.error("Stream error:", data);
+            setIsLoading(false);
+            return;
+          }
+
+          // Bygg opp svaret underveis
+          assistantMessage.content += data;
+          setMessages((prev) => {
+            const updated = [...prev];
+            updated[updated.length - 1] = { ...assistantMessage };
+            return updated;
+          });
+        }
       }
     } catch (err) {
       console.error("sendMessage error:", err);
+      setIsLoading(false);
       setMessages((prev) => [
         ...prev,
         {
@@ -100,7 +132,6 @@ export default function NullfilterChat() {
     sendMessage(msg);
   };
 
-  // 🔄 Fallback hvis config.starters mangler
   const starters =
     config.starters && config.starters.length > 0
       ? config.starters
@@ -202,6 +233,7 @@ export default function NullfilterChat() {
           setInput={setChatInput}
           onSend={sendMessage}
           themeColor={config.themeColor}
+          isLoading={isLoading}
         />
       </div>
     </div>
