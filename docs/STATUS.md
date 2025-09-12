@@ -190,9 +190,20 @@ User: "Hvordan kan jeg roe meg ned når tankene spinner?"
   → Backend (OpenAI) leverte første token på ~6 ms, så forsinkelsen kommer i Vercel/Edge/Frontend.  
   → Konklusjon: *ca. 3 sek grunnlatens oppstår i kjeden Vercel → Edge → nettleser, selv uten RAG.*
 
-- **To problemer samtidig**:  
-  1. Prompt-størrelse gjør modellen treg.  
-  2. Vercel-strømmen legger på fast latens (~3 sek).
+- **Medium systemprompt (instruksjoner, men ikke full RAG)**  
+  → Responstid ~34 sek.  
+  → Tokens: ≈2011 totalt, hvorav 1024 reasoning tokens.  
+  → Konklusjon: *GPT-5-mini blir svært langsom når reasoning-modus trigges.*
+
+- **Sammenligning GPT-5-mini vs GPT-4.1-mini (samme systemprompt)**  
+  → GPT-5-mini: ~34 sek, 2011 tokens, svært strukturert svar, mye reasoning.  
+  → GPT-4.1-mini: ~7,5 sek, 712 tokens, raskere og mer narrativt.  
+  → Konklusjon: *5-mini prioriterer strukturert, “coach-aktig” output men koster tid. 4.1-mini er raskere, men enklere i struktur.*
+
+- **JSON/escape-problem (apostrof i systemprompt)**  
+  → Funn: Apostrof (`"`) eller spesialtegn i systemprompt skaper *invalid_json-feil*.  
+  → Løsning: *Alle anførselstegn og spesialtegn må escapes (`\"`) i curl og requests.*
+
 
 
 ## 1000. Changelog
