@@ -47,8 +47,10 @@ export default async function handler(req, res) {
     let threadId = conversationId;
 
     if (!threadId) {
-      const { id } = await openai.beta.threads.create();
-      threadId = id;
+      const thread = await openai.beta.threads.create();
+      console.log("THREAD CREATE RESPONSE:", JSON.stringify(thread, null, 2)); // 👀 DEBUG
+      threadId = thread.id || thread?.data?.id;
+      console.log("VALGT threadId:", threadId); // 👀 DEBUG
     }
 
     // Finn siste melding fra brukeren
@@ -69,6 +71,8 @@ export default async function handler(req, res) {
     const run = await openai.beta.threads.runs.create(threadId, {
       assistant_id: assistantId,
     });
+
+    console.log("RUN CREATE RESPONSE:", JSON.stringify(run, null, 2)); // 👀 DEBUG
 
     // Polling med timeout
     const timeoutMs = 20000; // 20 sek maks
