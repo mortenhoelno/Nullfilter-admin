@@ -1,4 +1,4 @@
-// components/ChatEngine.js — FIX for spacing + avsnitt + leselighet
+// components/ChatEngine.js — FIX for spacing mellom ord + avsnitt
 
 import { useRef, useEffect, useState } from "react";
 import { createClientPerf } from "../utils/clientPerf";
@@ -87,7 +87,9 @@ export default function ChatEngine({
   const safeAppend = (prev, next) => {
     if (!prev) return next;
     const needsSpace =
-      !prev.endsWith(" ") && !next.startsWith(" ") && /[a-zA-Z0-9]/.test(prev.slice(-1));
+      !prev.endsWith(" ") &&
+      !next.startsWith(" ") &&
+      /[a-zA-Z0-9æøåÆØÅ]/.test(prev.slice(-1));
     return prev + (needsSpace ? " " : "") + next;
   };
 
@@ -104,7 +106,7 @@ export default function ChatEngine({
         return result?.response_ms;
       },
       onDelta: (delta) => {
-        // brukes hvis du streamer inn tekst
+        // --- Her sikrer vi mellomrom ---
         setMessages((prev) => {
           const last = prev[prev.length - 1];
           if (last?.role === "assistant") {
@@ -149,7 +151,7 @@ export default function ChatEngine({
                 m.role === "user" ? theme.user : theme.bot
               }`}
             >
-              {/* 👇 Gjør om \n\n til avsnitt og \n til <br /> */}
+              {/* 👇 Nå rendrer vi leselig tekst */}
               {m.content
                 .split(/\n\n+/)
                 .map((para, idx) => (
