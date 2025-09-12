@@ -1,18 +1,8 @@
-// components/ChatEngine.js — OPPDATERT for streaming + riktig whitespace
+// components/ChatEngine.js — OPPDATERT for riktig whitespace + typing-anim
 
 import { useRef, useEffect, useState } from "react";
-import { createClientPerf } from "../utils/clientPerf"; // ⏱️ Importer perf-verktøy
+import { createClientPerf } from "../utils/clientPerf";
 
-/**
- * @param {Object} props
- * @param {Array} props.messages
- * @param {string} props.input
- * @param {function} props.setInput
- * @param {function} props.onSend
- * @param {boolean} [props.loading]
- * @param {string} [props.themeColor] - f.eks. "blue" eller "green"
- * @param {Array} [props.suggestions] - forslag til spørsmål brukeren kan trykke på
- */
 export default function ChatEngine({
   messages,
   input,
@@ -31,31 +21,22 @@ export default function ChatEngine({
   const [fadeOut, setFadeOut] = useState(false);
   const [quickReplyCount, setQuickReplyCount] = useState(0);
 
-  // Ny: lokal perf-tracker for hver melding
   const perfRef = useRef(null);
 
-  // Scroll til bunnen når nye meldinger kommer
   useEffect(() => {
     if (bottomRef.current) {
       bottomRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
     }
   }, [messages]);
 
-  // Ventemeldinger
   const waitMessages = [
-    "Jeg samler de beste innsiktene for deg... ⏳",
-    "Jobber med å finne det perfekte svaret 🔍",
-    "Analyserer all tilgjengelig kunnskap for deg...",
-    "Lager et skreddersydd svar basert på alt jeg vet ✨",
-    "Setter sammen de mest relevante detaljene...",
-    "Kvalitet tar tid - jobber med ditt svar 💭",
-    "Gjennomgår omfattende kunnskap for best mulig svar...",
-    "Tenker grundig for å gi deg mest verdi 🧠",
-    "Kobler sammen innsikter for ditt unike behov...",
-    "Utarbeider et gjennomtenkt svar til deg ⚡",
+    "Jeg samler de beste innsiktene for deg",
+    "Jobber med å finne det perfekte svaret",
+    "Analyserer kunnskapen jeg har tilgjengelig",
+    "Setter sammen noe skreddersydd for deg",
+    "Tenker grundig for å gi deg mest verdi",
   ];
 
-  // Når loading starter → velg melding og skriv bokstav-for-bokstav
   useEffect(() => {
     if (loading) {
       const msg = waitMessages[Math.floor(Math.random() * waitMessages.length)];
@@ -66,12 +47,11 @@ export default function ChatEngine({
       let i = 0;
       const interval = setInterval(() => {
         i++;
-        setDisplayedText(msg.slice(0, i)); // bokstav for bokstav
+        setDisplayedText(msg.slice(0, i));
         if (i >= msg.length) clearInterval(interval);
       }, 40);
       return () => clearInterval(interval);
     } else if (waitingMessage) {
-      // Fade ut når boten har svart ferdig
       setFadeOut(true);
       const timer = setTimeout(() => {
         setWaitingMessage(null);
@@ -82,7 +62,6 @@ export default function ChatEngine({
     }
   }, [loading]);
 
-  // Auto-resize textarea
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
@@ -104,7 +83,6 @@ export default function ChatEngine({
   };
   const theme = colorMap[themeColor] || colorMap.blue;
 
-  // Wrapper for å koble perf → onSend
   const handleSend = (text) => {
     if (loading) return;
     perfRef.current = createClientPerf("chat");
@@ -153,7 +131,7 @@ export default function ChatEngine({
           </div>
         ))}
 
-        {/* Ventemelding / typing-indikator */}
+        {/* Typing-indikator */}
         <div className="min-h-[24px] flex items-center">
           {waitingMessage && (
             <div
@@ -162,7 +140,7 @@ export default function ChatEngine({
               }`}
             >
               {displayedText}
-              <span className="animate-pulse">|</span>
+              <span className="ml-1 animate-pulse">…</span>
             </div>
           )}
         </div>
