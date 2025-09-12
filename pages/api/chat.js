@@ -28,7 +28,8 @@ export default async function handler(req, res) {
 
   try {
     if (req.method !== "POST") {
-      return res.status(405).json({ error: "Method not allowed" });
+      res.setHeader("Allow", ["POST"]);
+      return res.status(405).end(`Method ${req.method} Not Allowed`);
     }
 
     mark("req_in");
@@ -48,30 +49,37 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Mangler gyldig brukerprompt" });
     }
 
+    // 🔄 Setup SSE (Server-Sent Events)
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.flushHeaders();
+
     mark("llm_req_start");
 
-    // 🔄 Kjør Responses API med Prompt ID
-    const response = await openai.responses.create({
+    // 🔄 Start streaming fra OpenAI Responses API
+    const stream = await openai.responses.stream({
       prompt: {
         id: cfg.promptId,
         version: cfg.version,
       },
       input: userMessage.content,
-      store: true, // lagrer hos OpenAI (kan brukes for historikk)
+      store: true,
     });
 
-    const reply =
-      response.output?.[0]?.content?.[0]?.text?.trim() || "(Ingen svar)";
-
-    mark("llm_stream_ended");
-    measure("llm_stream_ended", "llm_req_start");
-
-    return res.status(200).json({
-      reply,
-      perf: stepLog,
-    });
+    for await (const event of stream) {
+      if (event.type === "response.output_text.delta") {
+        res.write(`data: ${event.delta}\n\n`);
+      } else if (event.type === "response.completed") {
+        mark("llm_stream_ended");
+        measure("llm_stream_ended", "llm_req_start");
+        res.write(`data: [DONE]\n\n`);
+        res.end();
+      }
+    }
   } catch (err) {
     console.error("chat error", err);
-    return res.status(500).json({ error: String(err?.message || err) });
+    res.write(`data: [ERROR] ${String(err?.message || err)}\n\n`);
+    res.end();
   }
 }
