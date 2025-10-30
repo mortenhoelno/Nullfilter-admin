@@ -1,5 +1,5 @@
 # 🚀 STATUS – Chatbot-prosjektet
-
+Jeg tenker at jeg må jobbe litt mer med denn fremmover så den ikke blir slettet
 ### Dato
 - **11.09.2025**
 
